@@ -58,3 +58,41 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm build
 ```
+
+### [docker-build-scan-push](actions/docker-build-scan-push)
+
+Checks out the repo, builds a Docker image, scans it with
+[Trivy](https://github.com/aquasecurity/trivy), and pushes it only if the
+scan passes — the image is built locally first (`push: false, load: true`),
+scanned there, and only pushed afterward, so a vulnerable image is never
+pushed. By default any HIGH or CRITICAL finding fails the job and blocks
+the push (`severity`/`fail-on-scan-findings` are overridable for a
+report-only rollout period). `push` defaults to `false` so PR/validation
+runs build and scan without pushing.
+
+**Single-platform only** — local pre-push scanning needs a
+docker-loadable image, and Docker can't load a multi-platform manifest
+into the local daemon. Because this is a composite action (not a reusable
+workflow), it can't set job-level `permissions:` or use a `secrets:`
+block, so the calling workflow must itself grant
+`permissions: packages: write` (when pushing to GHCR) and pass registry
+credentials as plain inputs.
+
+```yaml
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ffbarrie/workflow-actions/actions/docker-build-scan-push@v1
+        with:
+          image-name: my-app
+          registry: ghcr.io
+          tags: latest,${{ github.sha }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+```
