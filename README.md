@@ -30,3 +30,31 @@ jobs:
             ${{ secrets.MAVEN_PASSWORD }}
       - run: mvn -B verify
 ```
+
+### [setup-node](actions/setup-node)
+
+Checks out the repo, installs Node.js (default 24) and the requested
+package manager (npm, pnpm, or yarn) with dependency caching, and runs a
+deterministic install (`npm ci` / `pnpm install --frozen-lockfile` /
+`yarn install --immutable`), or a full `install-command` override for
+cases like an out-of-sync lockfile or extra flags (e.g.
+`npm install --legacy-peer-deps`). Optionally writes `~/.npmrc` for private
+registry auth, either via `registry-url`/`scope` for the common single-scope
+case, or a full `npmrc` escape hatch for anything more involved (multiple
+registries/scopes — that's plain `.npmrc` text, so it needs no special
+handling here).
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ffbarrie/workflow-actions/actions/setup-node@v1
+        with:
+          package-manager: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: "@myorg"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: pnpm build
+```
