@@ -1,0 +1,133 @@
+name: docker-build-scan-push
+description: >
+  Checks out the repo, builds a Docker image, scans it with Trivy, and
+  pushes it to a registry only if the scan passes — the image is built
+  locally first (no push), scanned there, and only pushed afterward, so a
+  vulnerable image is never pushed. Single-platform only: local
+  pre-push scanning needs a docker-loadable image, and Docker can't load a
+  multi-platform manifest into the local daemon. Composite actions can't
+  set job-level permissions or use a secrets: block, so the caller's
+  workflow must itself grant `permissions: packages: write` (when pushing
+  to GHCR) and pass registry credentials as plain inputs.
+
+inputs:
+  context:
+    description: Build context directory
+    required: false
+    default: "."
+  dockerfile:
+    description: Path to the Dockerfile, relative to context
+    required: false
+    default: "Dockerfile"
+  image-name:
+    description: Image name without registry/tag, e.g. my-app
+    required: true
+  registry:
+    description: Registry host, e.g. ghcr.io or docker.io — never hardcode this, only pass it in
+    required: true
+  tags:
+    description: Comma-separated list of tags to build and (if push is true) push
+    required: true
+  push:
+    description: Push the image after a passing scan. Defaults to false so PR/validation runs don't push by accident.
+    required: false
+    default: "false"
+  skip-registry-login:
+    description: >
+      Skip the built-in docker/login-action step even when push is true.
+      Use this if you've already authenticated some other way (e.g.
+      OIDC/workload identity) that docker/login-action doesn't support.
+    required: false
+    default: "false"
+  registry-username:
+    description: Registry username. Only used when push is true and skip-registry-login is false.
+    required: false
+    default: ""
+  registry-password:
+    description: Registry password/token. Only used when push is true and skip-registry-login is false.
+    required: false
+    default: ""
+  build-args:
+    description: Newline-separated KEY=value build args
+    required: false
+    default: ""
+  severity:
+    description: Comma-separated Trivy severities that fail the scan
+    required: false
+    default: "HIGH,CRITICAL"
+  fail-on-scan-findings:
+    description: >
+      Whether matching-severity findings fail the job and block the push.
+      Set to false for a report-only rollout period; findings still print
+      to the job log either way.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    - name: Set up Buildx
+      uses: docker/setup-buildx-action@v4
+
+    - name: Build tag list
+      id: tags
+      shell: bash
+      run: |
+        set -euo pipefail
+        image="${{ inputs.registry }}/${{ inputs.image-name }}"
+        IFS=',' read -ra TAG_ARR <<< "${{ inputs.tags }}"
+        out=""
+        for t in "${TAG_ARR[@]}"; do
+          # trim leading/trailing whitespace so "v1, latest" (a natural way
+          # to type it) doesn't produce an invalid tag with a stray space
+          t="${t#"${t%%[![:space:]]*}"}"
+          t="${t%"${t##*[![:space:]]}"}"
+          out+="${image}:${t},"
+        done
+        echo "list=${out%,}" >> "$GITHUB_OUTPUT"
+        first="${TAG_ARR[0]}"
+        first="${first#"${first%%[![:space:]]*}"}"
+        first="${first%"${first##*[![:space:]]}"}"
+        echo "first=${image}:${first}" >> "$GITHUB_OUTPUT"
+
+    - name: Build image (no push)
+      uses: docker/build-push-action@v7
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.context }}/${{ inputs.dockerfile }}
+        push: false
+        load: true
+        tags: ${{ steps.tags.outputs.list }}
+        build-args: ${{ inputs.build-args }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Scan image
+      uses: aquasecurity/trivy-action@0.36.0
+      with:
+        image-ref: ${{ steps.tags.outputs.first }}
+        format: table
+        severity: ${{ inputs.severity }}
+        ignore-unfixed: false
+        exit-code: ${{ inputs.fail-on-scan-findings == 'true' && '1' || '0' }}
+
+    - name: Log in to registry
+      if: inputs.push == 'true' && inputs.skip-registry-login != 'true'
+      uses: docker/login-action@v4
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.registry-username }}
+        password: ${{ inputs.registry-password }}
+
+    - name: Push image
+      if: inputs.push == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        IFS=',' read -ra TAG_ARR <<< "${{ steps.tags.outputs.list }}"
+        for t in "${TAG_ARR[@]}"; do
+          docker push "$t"
+        done
