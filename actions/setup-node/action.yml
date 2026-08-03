@@ -1,0 +1,102 @@
+name: setup-node
+description: >
+  Checks out the repository, installs Node.js and the requested package
+  manager with dependency caching, and runs a deterministic install.
+  Optionally writes ~/.npmrc for private registry auth.
+
+inputs:
+  node-version:
+    description: Node.js version to install
+    required: false
+    default: "24"
+  package-manager:
+    description: One of npm, pnpm, yarn
+    required: false
+    default: npm
+  working-directory:
+    description: Directory containing the package manifest / lockfile
+    required: false
+    default: "."
+  registry-url:
+    description: >
+      Optional registry URL (e.g. https://registry.npmjs.org or
+      https://npm.pkg.github.com). When set, writes an .npmrc that
+      authenticates against it using a NODE_AUTH_TOKEN env var — the caller
+      must set that env var (typically from a secret) on any step that
+      installs or publishes against this registry. Ignored if npmrc is
+      also set.
+    required: false
+    default: ""
+  scope:
+    description: >
+      Optional npm scope (e.g. @myorg) to associate with registry-url — use
+      this when only packages under one scope come from a private registry
+      and everything else resolves from the public registry. Ignored if
+      npmrc is also set.
+    required: false
+    default: ""
+  npmrc:
+    description: >
+      Optional full .npmrc content, for anything registry-url/scope can't
+      express — e.g. multiple registries or scopes with different tokens,
+      which is plain .npmrc syntax and needs no special handling here.
+      Written to ~/.npmrc. Takes precedence over registry-url/scope when
+      set.
+    required: false
+    default: ""
+  install-command:
+    description: >
+      Optional full command to run instead of the default deterministic
+      install (npm ci / pnpm install --frozen-lockfile / yarn install
+      --immutable). Use this when the lockfile isn't in sync yet, or you
+      need extra flags (e.g. npm install --legacy-peer-deps). Still runs
+      in the working-directory, and package-manager still determines
+      caching and whether pnpm is set up.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    - name: Set up pnpm
+      if: inputs.package-manager == 'pnpm'
+      uses: pnpm/action-setup@v6
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: ${{ inputs.package-manager }}
+        cache-dependency-path: >-
+          ${{ inputs.package-manager == 'npm' && format('{0}/package-lock.json', inputs.working-directory) ||
+              inputs.package-manager == 'pnpm' && format('{0}/pnpm-lock.yaml', inputs.working-directory) ||
+              format('{0}/yarn.lock', inputs.working-directory) }}
+        registry-url: ${{ inputs.npmrc == '' && inputs.registry-url || '' }}
+        scope: ${{ inputs.npmrc == '' && inputs.scope || '' }}
+
+    - name: Write custom .npmrc
+      if: inputs.npmrc != ''
+      shell: bash
+      env:
+        NPMRC: ${{ inputs.npmrc }}
+      run: printf '%s' "$NPMRC" > ~/.npmrc
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INSTALL_COMMAND: ${{ inputs.install-command }}
+      run: |
+        if [ -n "$INSTALL_COMMAND" ]; then
+          eval "$INSTALL_COMMAND"
+        else
+          case "${{ inputs.package-manager }}" in
+            npm)  npm ci ;;
+            pnpm) pnpm install --frozen-lockfile ;;
+            yarn) yarn install --immutable ;;
+            *) echo "::error::Unknown package-manager: ${{ inputs.package-manager }}" >&2; exit 1 ;;
+          esac
+        fi
