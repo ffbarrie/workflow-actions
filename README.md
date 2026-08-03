@@ -17,7 +17,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: your-org/workflow-actions/actions/setup-java-maven@v1
+      - uses: ffbarrie/workflow-actions/actions/setup-java-maven@v1
         with:
           server-ids: |
             github
