@@ -44,6 +44,16 @@ inputs:
       set.
     required: false
     default: ""
+  install-command:
+    description: >
+      Optional full command to run instead of the default deterministic
+      install (npm ci / pnpm install --frozen-lockfile / yarn install
+      --immutable). Use this when the lockfile isn't in sync yet, or you
+      need extra flags (e.g. npm install --legacy-peer-deps). Still runs
+      in the working-directory, and package-manager still determines
+      caching and whether pnpm is set up.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -77,10 +87,16 @@ runs:
     - name: Install dependencies
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        INSTALL_COMMAND: ${{ inputs.install-command }}
       run: |
-        case "${{ inputs.package-manager }}" in
-          npm)  npm ci ;;
-          pnpm) pnpm install --frozen-lockfile ;;
-          yarn) yarn install --immutable ;;
-          *) echo "::error::Unknown package-manager: ${{ inputs.package-manager }}" >&2; exit 1 ;;
-        esac
+        if [ -n "$INSTALL_COMMAND" ]; then
+          eval "$INSTALL_COMMAND"
+        else
+          case "${{ inputs.package-manager }}" in
+            npm)  npm ci ;;
+            pnpm) pnpm install --frozen-lockfile ;;
+            yarn) yarn install --immutable ;;
+            *) echo "::error::Unknown package-manager: ${{ inputs.package-manager }}" >&2; exit 1 ;;
+          esac
+        fi

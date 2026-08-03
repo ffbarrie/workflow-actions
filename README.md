@@ -36,7 +36,9 @@ jobs:
 Checks out the repo, installs Node.js (default 24) and the requested
 package manager (npm, pnpm, or yarn) with dependency caching, and runs a
 deterministic install (`npm ci` / `pnpm install --frozen-lockfile` /
-`yarn install --immutable`). Optionally writes `~/.npmrc` for private
+`yarn install --immutable`), or a full `install-command` override for
+cases like an out-of-sync lockfile or extra flags (e.g.
+`npm install --legacy-peer-deps`). Optionally writes `~/.npmrc` for private
 registry auth, either via `registry-url`/`scope` for the common single-scope
 case, or a full `npmrc` escape hatch for anything more involved (multiple
 registries/scopes — that's plain `.npmrc` text, so it needs no special
