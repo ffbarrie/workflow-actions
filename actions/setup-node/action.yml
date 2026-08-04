@@ -54,11 +54,20 @@ inputs:
       caching and whether pnpm is set up.
     required: false
     default: ""
+  checkout:
+    description: >
+      Whether to check out the repo. Set to false when a prior step in
+      this job already did (setup-java-maven, your own actions/checkout,
+      or this action used earlier) — skipping avoids actions/checkout's
+      default git clean wiping out anything built since that checkout.
+    required: false
+    default: "true"
 
 runs:
   using: composite
   steps:
     - name: Checkout
+      if: inputs.checkout == 'true'
       uses: actions/checkout@v7
 
     - name: Set up pnpm

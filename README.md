@@ -10,7 +10,9 @@ Checks out the repo, installs a JDK (default 21) with Maven dependency
 caching, and optionally writes `~/.m2/settings.xml` with one or more
 `<server>` credential entries. Servers are given as plain newline-delimited
 lists — `server-ids`, `server-usernames`, and `server-passwords` — paired up
-by line position, so no JSON is needed even for multiple servers.
+by line position, so no JSON is needed even for multiple servers. Pass
+`checkout: false` if a prior step in the job already checked the repo out
+— see [Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
 
 ```yaml
 jobs:
@@ -42,7 +44,9 @@ cases like an out-of-sync lockfile or extra flags (e.g.
 registry auth, either via `registry-url`/`scope` for the common single-scope
 case, or a full `npmrc` escape hatch for anything more involved (multiple
 registries/scopes — that's plain `.npmrc` text, so it needs no special
-handling here).
+handling here). Pass `checkout: false` if a prior step in the job already
+checked the repo out — see
+[Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
 
 ```yaml
 jobs:
@@ -78,6 +82,12 @@ block, so the calling workflow must itself grant
 `permissions: packages: write` (when pushing to GHCR) and pass registry
 credentials as plain inputs.
 
+This is typically the *last* action in a job, run after the app is
+already built — pass `checkout: false` in that case, since
+`actions/checkout`'s default `git clean` would otherwise delete whatever
+that build produced. See
+[Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
+
 ```yaml
 permissions:
   contents: read
@@ -89,6 +99,44 @@ jobs:
     steps:
       - uses: ffbarrie/workflow-actions/actions/docker-build-scan-push@v1
         with:
+          image-name: my-app
+          registry: ghcr.io
+          tags: latest,${{ github.sha }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+```
+
+## Chaining multiple actions in one job
+
+Each action above checks out the repo by default, since each also works
+standalone as the first step in a job. But these are composite actions,
+not reusable workflows — their steps run inside your job, on the same
+runner and filesystem as everything else in it. Chain two or more of
+them (or run one after your own build step) without disabling checkout
+on all but the first, and `actions/checkout`'s default `git clean -ffdx`
+will delete whatever the earlier steps produced, since generated build
+output is untracked and gitignored.
+
+Set `checkout: false` on every one of these actions after the first in
+the job:
+
+```yaml
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ffbarrie/workflow-actions/actions/setup-node@v1
+        with:
+          package-manager: pnpm
+      - run: pnpm build
+      - uses: ffbarrie/workflow-actions/actions/docker-build-scan-push@v1
+        with:
+          checkout: false
           image-name: my-app
           registry: ghcr.io
           tags: latest,${{ github.sha }}

@@ -62,11 +62,22 @@ inputs:
       to the job log either way.
     required: false
     default: "true"
+  checkout:
+    description: >
+      Whether to check out the repo. Set to false when a prior step in
+      this job already did (setup-node, setup-java-maven, or your own
+      actions/checkout) — skipping avoids actions/checkout's default git
+      clean wiping out anything built since that checkout, which matters
+      most here since this is typically the last step in a chain, run
+      after the app has already been built.
+    required: false
+    default: "true"
 
 runs:
   using: composite
   steps:
     - name: Checkout
+      if: inputs.checkout == 'true'
       uses: actions/checkout@v7
 
     - name: Set up Buildx
