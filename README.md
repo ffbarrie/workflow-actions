@@ -13,6 +13,9 @@ lists — `server-ids`, `server-usernames`, and `server-passwords` — paired up
 by line position, so no JSON is needed even for multiple servers. Pass
 `checkout: false` if a prior step in the job already checked the repo out
 — see [Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
+`fetch-depth` (default `1`, passed straight through to `actions/checkout`)
+only needs to be `0` when a later step needs full tag history — e.g.
+[set-version](#set-version)'s closest-tag comparison.
 
 ```yaml
 jobs:
@@ -47,6 +50,9 @@ registries/scopes — that's plain `.npmrc` text, so it needs no special
 handling here). Pass `checkout: false` if a prior step in the job already
 checked the repo out — see
 [Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
+`fetch-depth` (default `1`, passed straight through to `actions/checkout`)
+only needs to be `0` when a later step needs full tag history — e.g.
+[set-version](#set-version)'s closest-tag comparison.
 
 ```yaml
 jobs:
@@ -135,12 +141,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: ffbarrie/workflow-actions/actions/setup-java-maven@v1
         with:
-          checkout: false
+          fetch-depth: 0
           java-version: "21"
       - uses: ffbarrie/workflow-actions/actions/set-version@v1
         id: version
