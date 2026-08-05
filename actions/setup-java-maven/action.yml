@@ -21,6 +21,12 @@ inputs:
       server-usernames and server-passwords, so all three must have the
       same number of lines. Covers authenticating to one or more private
       repositories (e.g. GitHub Packages plus a private release repo).
+      This write is authoritative: it replaces the whole file, including
+      actions/setup-java's own default "github" server entry (it writes
+      one using GITHUB_ACTOR/GITHUB_TOKEN whether or not you asked for
+      it). If you need that github entry alongside your own servers,
+      include "github" as one of your own server-ids/server-usernames/
+      server-passwords lines — see the README example.
     required: false
     default: ""
   server-usernames:

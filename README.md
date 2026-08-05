@@ -10,7 +10,11 @@ Checks out the repo, installs a JDK (default 21) with Maven dependency
 caching, and optionally writes `~/.m2/settings.xml` with one or more
 `<server>` credential entries. Servers are given as plain newline-delimited
 lists — `server-ids`, `server-usernames`, and `server-passwords` — paired up
-by line position, so no JSON is needed even for multiple servers. Pass
+by line position, so no JSON is needed even for multiple servers. This
+write is authoritative — it replaces the whole file, including
+`actions/setup-java`'s own default `github` server entry (it writes one
+using `GITHUB_ACTOR`/`GITHUB_TOKEN` whether or not you asked for it); the
+example below includes `github` explicitly for exactly that reason. Pass
 `checkout: false` if a prior step in the job already checked the repo out
 — see [Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
 `fetch-depth` (default `1`, passed straight through to `actions/checkout`)
@@ -223,6 +227,29 @@ jobs:
 
 ## Workflows
 
+### Bootstrapping a new repo
+
+GitHub only dispatches `pull_request`, `workflow_dispatch`, and `schedule`
+triggers for workflow files that **already exist on the default branch** —
+a wrapper introduced in the very PR that's supposed to trigger it can't
+fire on that PR, since the default branch doesn't have the file yet at
+evaluation time. The symptom is a run that fails instantly with zero jobs
+and "This run likely failed because of a workflow file issue" — not a
+build, deploy, or secrets problem, just this bootstrap gap. It hits every
+wrapper below (`promote-to-main.yml`'s `workflow_dispatch` included) the
+first time a repo adopts them, and resolves itself from the next real
+event onward. Nothing is lost when it happens — merge the wrapper files
+to `main` via a normal PR first, and the next natural develop → main
+promote will trigger correctly.
+
+Each release wrapper example below also includes `workflow_dispatch` as a
+second trigger alongside `pull_request`, specifically so a human has a
+manual way to complete that first bootstrap (or recover from any missed
+automatic trigger) without waiting on another real PR merge. Note the
+job's `if:` — it has to explicitly allow `workflow_dispatch` through,
+since `github.event.pull_request` doesn't exist on that trigger and would
+otherwise evaluate the merged/head-ref checks as false.
+
 ### [promote-to-main.yml](.github/workflows/promote-to-main.yml)
 
 Reusable workflow, not a composite action — it's the first half of a
@@ -269,16 +296,21 @@ PR closes — so every checkout here is pinned to an explicit `ref: main`.
 
 Like `promote-to-main.yml`, this has no trigger of its own:
 
+Optional GPG signing: pass `gpg-sign: true` and provide `gpg-private-key` /
+`gpg-passphrase` secrets. Secrets cannot appear in step `if` conditions, so
+signing is gated by this input instead.
+
 ```yaml
 # .github/workflows/release.yml, in the consuming repo
 on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop')
     uses: ffbarrie/workflow-actions/.github/workflows/release-java-library.yml@v1
     secrets:
       maven-server-ids: github
@@ -310,10 +342,11 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop')
     uses: ffbarrie/workflow-actions/.github/workflows/release-java-application.yml@v1
     with:
       image-name: my-app
@@ -344,10 +377,11 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop')
     uses: ffbarrie/workflow-actions/.github/workflows/release-node-library.yml@v1
     secrets:
       npm-token: ${{ secrets.NPM_TOKEN }}
@@ -377,10 +411,11 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop')
     uses: ffbarrie/workflow-actions/.github/workflows/release-node-application.yml@v1
     with:
       image-name: my-app
