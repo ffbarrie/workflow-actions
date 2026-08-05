@@ -11,8 +11,10 @@ description: >
   or Java/Maven) is already set up, e.g. via setup-node or
   setup-java-maven earlier in the same job. Does not commit, tag, or push
   anything; that's left to later steps in the calling workflow. The
-  application-release.yaml path writes app.version specifically and
-  requires yq (present by default on GitHub-hosted ubuntu runners).
+  application-release.yaml path writes app.version and app.build (a UTC
+  build timestamp, yyyy-MM-ddTHH:mm:ssZ — matching the existing
+  PowerShell release scripts' convention) and requires yq (present by
+  default on GitHub-hosted ubuntu runners).
 
 inputs:
   language:
@@ -135,4 +137,6 @@ runs:
           echo "::error::set-version: application-release-yaml-path '$YAML_PATH' does not exist"
           exit 1
         fi
-        yq -i '.app.version = strenv(VALIDATED_VERSION)' "$YAML_PATH"
+        export BUILD_UTC
+        BUILD_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        yq -i '.app.version = strenv(VALIDATED_VERSION) | .app.build = strenv(BUILD_UTC)' "$YAML_PATH"
