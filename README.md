@@ -352,3 +352,40 @@ jobs:
     secrets:
       npm-token: ${{ secrets.NPM_TOKEN }}
 ```
+
+### [release-node-application.yml](.github/workflows/release-node-application.yml)
+
+Same shape as `release-java-application.yml` — runs on `main` after
+`promote-to-main.yml`'s PR merges, re-derives the release version, tags
+the release the same tag-only way, and proposes the next develop version
+— but for Node applications that ship as a container. Builds
+(`build-command`, default `npm run build`) and then builds/scans/pushes
+the image via `docker-build-scan-push`, tagged with both the release
+version and `latest`. Node has no SNAPSHOT convention, so the proposed
+next develop version is a plain number, no suffix, same as
+`release-node-library.yml`.
+
+`docker-build-scan-push`'s own checkout is disabled here too, for the
+same `pull_request` ref-pinning reason as everywhere else in this
+workflow, and also because its default `git clean` would otherwise wipe
+out the build output the build step just produced — see
+[Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
+
+```yaml
+# .github/workflows/release.yml, in the consuming repo
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    uses: ffbarrie/workflow-actions/.github/workflows/release-node-application.yml@v1
+    with:
+      image-name: my-app
+      registry: registry.internal.example.com
+    secrets:
+      registry-username: ${{ secrets.NEXUS_USERNAME }}
+      registry-password: ${{ secrets.NEXUS_PASSWORD }}
+```
