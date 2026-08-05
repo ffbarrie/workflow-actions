@@ -249,3 +249,193 @@ jobs:
     with:
       language: java
 ```
+
+### [release-java-library.yml](.github/workflows/release-java-library.yml)
+
+Second half of the release, for Java library repos that publish jars via
+`mvn deploy`. Runs on `main` right after `promote-to-main.yml`'s PR
+merges: re-derives the release version independently (`get-version` +
+`set-version`, not trusting anything carried over from that PR), builds
+and `mvn deploy`s the library, then tags the release — then proposes the
+next `develop` SNAPSHOT (a minor version bump) as a PR back to `develop`,
+for a human to edit before merging if a different bump is wanted.
+
+The release commit is never pushed to the `main` branch ref itself, only
+as the tag it points to — `main` is typically branch-protected, and a
+plain branch push would be rejected, while a tag push needs no special
+bypass configuration in the calling repo. `pull_request`'s `github.ref` is
+the PR's merge ref, not the target branch, and that ref is gone once the
+PR closes — so every checkout here is pinned to an explicit `ref: main`.
+
+Like `promote-to-main.yml`, this has no trigger of its own:
+
+```yaml
+# .github/workflows/release.yml, in the consuming repo
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    uses: ffbarrie/workflow-actions/.github/workflows/release-java-library.yml@v1
+    secrets:
+      maven-server-ids: github
+      maven-server-usernames: ${{ github.actor }}
+      maven-server-passwords: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### [release-java-application.yml](.github/workflows/release-java-application.yml)
+
+Same shape as `release-java-library.yml` — runs on `main` after
+`promote-to-main.yml`'s PR merges, re-derives the release version, tags
+the release the same tag-only way, and proposes the next `develop`
+SNAPSHOT — but for Java applications that ship as a container instead of
+a published jar. Builds the jar (`build-command`, default `mvn -B
+package`) and then builds/scans/pushes the image via
+`docker-build-scan-push`, tagged with both the release version and
+`latest`. No GPG signing step — that's a Maven Central concern, not a
+Docker one.
+
+`docker-build-scan-push`'s own checkout is disabled here too, for the
+same `pull_request` ref-pinning reason as everywhere else in this
+workflow, and also because its default `git clean` would otherwise wipe
+out the jar the build step just produced — see
+[Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
+
+```yaml
+# .github/workflows/release.yml, in the consuming repo
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    uses: ffbarrie/workflow-actions/.github/workflows/release-java-application.yml@v1
+    with:
+      image-name: my-app
+      registry: registry.internal.example.com
+    secrets:
+      registry-username: ${{ secrets.NEXUS_USERNAME }}
+      registry-password: ${{ secrets.NEXUS_PASSWORD }}
+```
+
+### [release-node-library.yml](.github/workflows/release-node-library.yml)
+
+Same shape as the Java release workflows — runs on `main` after
+`promote-to-main.yml`'s PR merges, re-derives the release version, tags
+the release the same tag-only way — but for Node libraries publishing a
+tarball (`publish-command`, default `npm publish`). Node has no SNAPSHOT
+convention, so unlike the Java workflows the proposed next develop
+version is a plain number, no suffix, applied the same way the release
+version is.
+
+**Root `package.json` only for now** — this doesn't address a monorepo's
+child packages, which was a deliberate deferral, not an oversight (no
+Changesets; child-package versioning via `set-version` is a later
+problem).
+
+```yaml
+# .github/workflows/release.yml, in the consuming repo
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    uses: ffbarrie/workflow-actions/.github/workflows/release-node-library.yml@v1
+    secrets:
+      npm-token: ${{ secrets.NPM_TOKEN }}
+```
+
+### [release-node-application.yml](.github/workflows/release-node-application.yml)
+
+Same shape as `release-java-application.yml` — runs on `main` after
+`promote-to-main.yml`'s PR merges, re-derives the release version, tags
+the release the same tag-only way, and proposes the next develop version
+— but for Node applications that ship as a container. Builds
+(`build-command`, default `npm run build`) and then builds/scans/pushes
+the image via `docker-build-scan-push`, tagged with both the release
+version and `latest`. Node has no SNAPSHOT convention, so the proposed
+next develop version is a plain number, no suffix, same as
+`release-node-library.yml`.
+
+`docker-build-scan-push`'s own checkout is disabled here too, for the
+same `pull_request` ref-pinning reason as everywhere else in this
+workflow, and also because its default `git clean` would otherwise wipe
+out the build output the build step just produced — see
+[Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
+
+```yaml
+# .github/workflows/release.yml, in the consuming repo
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    uses: ffbarrie/workflow-actions/.github/workflows/release-node-application.yml@v1
+    with:
+      image-name: my-app
+      registry: registry.internal.example.com
+    secrets:
+      registry-username: ${{ secrets.NEXUS_USERNAME }}
+      registry-password: ${{ secrets.NEXUS_PASSWORD }}
+```
+
+### [build-test-java.yml](.github/workflows/build-test-java.yml)
+
+Regular CI — `mvn verify` — shared by both Java library and application
+repos, since compiling and testing doesn't care which the artifact
+eventually becomes; that only matters at release time. `build-image` is
+an application-repo opt-in: a validation-only `docker build` (no push)
+that catches Dockerfile problems in CI instead of at release time.
+Libraries have no Dockerfile and leave it at the default `false`.
+
+```yaml
+# .github/workflows/ci.yml, in the consuming repo
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  ci:
+    uses: ffbarrie/workflow-actions/.github/workflows/build-test-java.yml@v1
+    secrets: inherit
+```
+
+### [build-test-node-library.yml](.github/workflows/build-test-node-library.yml) and [build-test-node-application.yml](.github/workflows/build-test-node-application.yml)
+
+Regular CI for Node — lint/build/test — kept as two separate workflows
+rather than one branching on both package-manager *and*
+monorepo-vs-single-package. `build-test-node-library.yml` is
+workspace-aware (`pnpm --recursive`, `yarn workspaces foreach`, etc.) for
+the monorepo case; `build-test-node-application.yml` uses plain
+single-package commands and adds the same `build-image` Dockerfile
+validation opt-in as `build-test-java.yml`. Set `lint-command: ""` to
+skip linting.
+
+```yaml
+# .github/workflows/ci.yml, in the consuming repo
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  ci:
+    uses: ffbarrie/workflow-actions/.github/workflows/build-test-node-application.yml@v1
+    with:
+      package-manager: pnpm
+    secrets: inherit
+```
