@@ -1,0 +1,133 @@
+name: build-test-node-application
+
+# Reusable workflow only — no trigger of its own. The calling repo needs
+# its own thin wrapper, typically:
+#
+#   on:
+#     push:
+#       branches: [develop]
+#     pull_request:
+#       branches: [develop]
+#   jobs:
+#     ci:
+#       uses: ffbarrie/workflow-actions/.github/workflows/build-test-node-application.yml@v1
+#       secrets: inherit
+#
+# Single-package commands (not workspace-aware) — see
+# build-test-node-library.yml for the monorepo case and why they're kept
+# separate rather than one workflow branching on both package-manager and
+# monorepo-vs-single. build-image is an opt-in validation-only docker
+# build (no push) to catch Dockerfile problems in CI rather than at
+# release.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        required: false
+        default: "24"
+      package-manager:
+        type: string
+        required: false
+        default: npm
+      working-directory:
+        type: string
+        required: false
+        default: "."
+      registry-url:
+        type: string
+        required: false
+        default: ""
+      scope:
+        type: string
+        required: false
+        default: ""
+      lint-command:
+        description: Set to "" to skip linting
+        type: string
+        required: false
+        default: lint
+      build-command:
+        type: string
+        required: false
+        default: build
+      test-command:
+        type: string
+        required: false
+        default: test
+      build-image:
+        description: Also build (not push) a container image to validate the Dockerfile
+        type: boolean
+        required: false
+        default: false
+      context:
+        description: Build context for the validation image build, relative to working-directory. Only used when build-image is true.
+        type: string
+        required: false
+        default: "."
+      dockerfile:
+        description: Dockerfile path relative to context. Only used when build-image is true.
+        type: string
+        required: false
+        default: Dockerfile
+      runs-on:
+        type: string
+        required: false
+        default: ubuntu-latest
+    secrets:
+      npm-token:
+        description: Auth token for the install registry, if registry-url is set
+        required: false
+      npmrc:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ${{ inputs.runs-on }}
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+    steps:
+      - name: Set up Node
+        uses: ./actions/setup-node
+        with:
+          node-version: ${{ inputs.node-version }}
+          package-manager: ${{ inputs.package-manager }}
+          working-directory: ${{ inputs.working-directory }}
+          registry-url: ${{ inputs.registry-url }}
+          scope: ${{ inputs.scope }}
+          npmrc: ${{ secrets.npmrc }}
+
+      - name: Lint
+        if: inputs.lint-command != ''
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          SCRIPT: ${{ inputs.lint-command }}
+        run: ${{ inputs.package-manager }} run --if-present "$SCRIPT"
+
+      - name: Build
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          SCRIPT: ${{ inputs.build-command }}
+        run: ${{ inputs.package-manager }} run --if-present "$SCRIPT"
+
+      - name: Test
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          SCRIPT: ${{ inputs.test-command }}
+        run: ${{ inputs.package-manager }} run --if-present "$SCRIPT"
+
+      - name: Validate container image build
+        if: inputs.build-image
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          CONTEXT: ${{ inputs.context }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+        run: docker build -f "${CONTEXT}/${DOCKERFILE}" -t ci-validation:${{ github.sha }} "$CONTEXT"

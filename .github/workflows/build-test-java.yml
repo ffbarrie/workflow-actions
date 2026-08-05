@@ -1,0 +1,108 @@
+name: build-test-java
+
+# Reusable workflow only — no trigger of its own. The calling repo needs
+# its own thin wrapper, typically:
+#
+#   on:
+#     push:
+#       branches: [develop]
+#     pull_request:
+#       branches: [develop]
+#   jobs:
+#     ci:
+#       uses: ffbarrie/workflow-actions/.github/workflows/build-test-java.yml@v1
+#       secrets: inherit
+#
+# Shared by both Java library and application repos — mvn verify doesn't
+# care which the artifact eventually becomes; that only matters at
+# release time (release-java-library.yml vs release-java-application.yml).
+# build-image is an application-repo opt-in: a validation-only docker
+# build (no push) to catch Dockerfile problems in CI rather than at
+# release. Libraries have no Dockerfile and leave it at the default false.
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        type: string
+        required: false
+        default: "21"
+      distribution:
+        type: string
+        required: false
+        default: temurin
+      working-directory:
+        type: string
+        required: false
+        default: "."
+      maven-args:
+        description: Extra arguments appended to the mvn verify invocation
+        type: string
+        required: false
+        default: ""
+      build-image:
+        description: Also build (not push) a container image to validate the Dockerfile — application repos only
+        type: boolean
+        required: false
+        default: false
+      context:
+        description: Build context for the validation image build, relative to working-directory. Only used when build-image is true.
+        type: string
+        required: false
+        default: "."
+      dockerfile:
+        description: Dockerfile path relative to context. Only used when build-image is true.
+        type: string
+        required: false
+        default: Dockerfile
+      runs-on:
+        type: string
+        required: false
+        default: ubuntu-latest
+    secrets:
+      maven-server-ids:
+        required: false
+      maven-server-usernames:
+        required: false
+      maven-server-passwords:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Set up Java + Maven
+        uses: ./actions/setup-java-maven
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: ${{ inputs.distribution }}
+          server-ids: ${{ secrets.maven-server-ids }}
+          server-usernames: ${{ secrets.maven-server-usernames }}
+          server-passwords: ${{ secrets.maven-server-passwords }}
+
+      - name: Build and test
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          MAVEN_ARGS: ${{ inputs.maven-args }}
+        run: mvn -B verify $MAVEN_ARGS
+
+      - name: Validate container image build
+        if: inputs.build-image
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          CONTEXT: ${{ inputs.context }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+        run: docker build -f "${CONTEXT}/${DOCKERFILE}" -t ci-validation:${{ github.sha }} "$CONTEXT"
+
+      - name: Publish test report summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: surefire-reports
+          path: "${{ inputs.working-directory }}/**/target/surefire-reports/*.txt"
+          if-no-files-found: ignore
