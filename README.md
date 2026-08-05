@@ -322,3 +322,33 @@ jobs:
       registry-username: ${{ secrets.NEXUS_USERNAME }}
       registry-password: ${{ secrets.NEXUS_PASSWORD }}
 ```
+
+### [release-node-library.yml](.github/workflows/release-node-library.yml)
+
+Same shape as the Java release workflows — runs on `main` after
+`promote-to-main.yml`'s PR merges, re-derives the release version, tags
+the release the same tag-only way — but for Node libraries publishing a
+tarball (`publish-command`, default `npm publish`). Node has no SNAPSHOT
+convention, so unlike the Java workflows the proposed next develop
+version is a plain number, no suffix, applied the same way the release
+version is.
+
+**Root `package.json` only for now** — this doesn't address a monorepo's
+child packages, which was a deliberate deferral, not an oversight (no
+Changesets; child-package versioning via `set-version` is a later
+problem).
+
+```yaml
+# .github/workflows/release.yml, in the consuming repo
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    uses: ffbarrie/workflow-actions/.github/workflows/release-node-library.yml@v1
+    secrets:
+      npm-token: ${{ secrets.NPM_TOKEN }}
+```
