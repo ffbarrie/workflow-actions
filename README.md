@@ -121,13 +121,13 @@ jobs:
 
 Read-only: reads the project's current version from its version file —
 `pom.xml` for Java, `package.json` for Node — and reports it as `version`
-(raw, e.g. `1.1.0-SNAPSHOT`), `base-version` (SNAPSHOT suffix stripped,
-e.g. `1.1.0`), and `is-snapshot`. Makes no changes and compares against
-nothing — it's the shared "what does the file currently say" building
-block behind both halves of a release: computing the release version from
-develop's current SNAPSHOT, and re-deriving that same version on `main`
-right after the promote PR merges (which carries the SNAPSHOT-suffixed
-value over as-is).
+(raw, e.g. `1.1.0-SNAPSHOT` or `1.1.0-dev`), `base-version` (dev suffix
+stripped, e.g. `1.1.0`), and `is-snapshot`. Makes no changes and compares
+against nothing — it's the shared "what does the file currently say"
+building block behind both halves of a release: computing the release
+version from develop's current dev version, and re-deriving that same
+version on `main` right after the promote PR merges (which carries the
+dev-suffixed value over as-is).
 
 Same assumptions as `set-version`: no checkout of its own, and language
 tooling already set up by a prior step.
@@ -149,17 +149,17 @@ layout — `app.build` is a UTC build timestamp, `yyyy-MM-ddTHH:mm:ssZ`,
 matching the existing PowerShell release scripts' convention) for Java.
 
 On `main`, the version must be strictly greater than the closest existing
-release tag reachable from HEAD. On `develop` with `language: java`
-specifically, `-SNAPSHOT` is appended to the applied version and the
-comparison relaxes to greater-than-or-*equal* — right after a release
-resync, `develop` legitimately holds the just-tagged version as a bare
-number (tag `v1.1.0`, file says `1.1.0`), and the next snapshot based on
-that same number (`1.1.0-SNAPSHOT`) is exactly what continues development.
-Node has no SNAPSHOT concept and is unaffected. Other branches skip the
-tag comparison entirely but still validate the version's format.
+release tag reachable from HEAD. On `develop`, a hardcoded per-language
+dev suffix is appended to the applied version — `-SNAPSHOT` for Java,
+`-dev` for Node — and the comparison relaxes to greater-than-or-*equal*
+— right after a release resync, `develop` legitimately holds the
+just-tagged version as a bare number (tag `v1.1.0`, file says `1.1.0`),
+and the next dev version based on that same number (`1.1.0-SNAPSHOT` or
+`1.1.0-dev`) is exactly what continues development. Other branches skip
+the tag comparison entirely but still validate the version's format.
 
 Returns `success`, `error-message`, and `validated-version` (the version
-actually applied, including any `-SNAPSHOT` suffix) as outputs — the step
+actually applied, including any dev suffix) as outputs — the step
 also fails (non-zero exit) on invalid input, so add `if: always()` on any
 later step that needs to read the outputs after a failure.
 
@@ -253,8 +253,8 @@ otherwise evaluate the merged/head-ref checks as false.
 ### [promote-to-main.yml](.github/workflows/promote-to-main.yml)
 
 Reusable workflow, not a composite action — it's the first half of a
-release: computes the release version from `develop`'s current SNAPSHOT
-(via `get-version`) and opens the `develop` → `main` promote PR. It
+release: computes the release version from `develop`'s current dev
+version (via `get-version`) and opens the `develop` → `main` promote PR. It
 doesn't build, test, publish, commit, or tag anything; the actual release
 work happens on `main`, triggered by that PR's merge, which re-derives
 the same version independently rather than trusting anything carried over
@@ -361,10 +361,9 @@ jobs:
 Same shape as the Java release workflows — runs on `main` after
 `promote-to-main.yml`'s PR merges, re-derives the release version, tags
 the release the same tag-only way — but for Node libraries publishing a
-tarball (`publish-command`, default `npm publish`). Node has no SNAPSHOT
-convention, so unlike the Java workflows the proposed next develop
-version is a plain number, no suffix, applied the same way the release
-version is.
+tarball (`publish-command`, default `npm publish`). The proposed next
+develop version gets `-dev` appended (Node's hardcoded dev suffix,
+mirroring Java's `-SNAPSHOT`), e.g. `1.2.0-dev`.
 
 **Root `package.json` only for now** — this doesn't address a monorepo's
 child packages, which was a deliberate deferral, not an oversight (no
@@ -395,9 +394,8 @@ the release the same tag-only way, and proposes the next develop version
 — but for Node applications that ship as a container. Builds
 (`build-command`, default `npm run build`) and then builds/scans/pushes
 the image via `docker-build-scan-push`, tagged with both the release
-version and `latest`. Node has no SNAPSHOT convention, so the proposed
-next develop version is a plain number, no suffix, same as
-`release-node-library.yml`.
+version and `latest`. The proposed next develop version gets `-dev`
+appended, same as `release-node-library.yml`.
 
 `docker-build-scan-push`'s own checkout is disabled here too, for the
 same `pull_request` ref-pinning reason as everywhere else in this
