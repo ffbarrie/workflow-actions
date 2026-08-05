@@ -227,6 +227,29 @@ jobs:
 
 ## Workflows
 
+### Bootstrapping a new repo
+
+GitHub only dispatches `pull_request`, `workflow_dispatch`, and `schedule`
+triggers for workflow files that **already exist on the default branch** —
+a wrapper introduced in the very PR that's supposed to trigger it can't
+fire on that PR, since the default branch doesn't have the file yet at
+evaluation time. The symptom is a run that fails instantly with zero jobs
+and "This run likely failed because of a workflow file issue" — not a
+build, deploy, or secrets problem, just this bootstrap gap. It hits every
+wrapper below (`promote-to-main.yml`'s `workflow_dispatch` included) the
+first time a repo adopts them, and resolves itself from the next real
+event onward. Nothing is lost when it happens — merge the wrapper files
+to `main` via a normal PR first, and the next natural develop → main
+promote will trigger correctly.
+
+Each release wrapper example below also includes `workflow_dispatch` as a
+second trigger alongside `pull_request`, specifically so a human has a
+manual way to complete that first bootstrap (or recover from any missed
+automatic trigger) without waiting on another real PR merge. Note the
+job's `if:` — it has to explicitly allow `workflow_dispatch` through,
+since `github.event.pull_request` doesn't exist on that trigger and would
+otherwise evaluate the merged/head-ref checks as false.
+
 ### [promote-to-main.yml](.github/workflows/promote-to-main.yml)
 
 Reusable workflow, not a composite action — it's the first half of a
@@ -283,10 +306,11 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop')
     uses: ffbarrie/workflow-actions/.github/workflows/release-java-library.yml@v1
     secrets:
       maven-server-ids: github
@@ -318,10 +342,11 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop')
     uses: ffbarrie/workflow-actions/.github/workflows/release-java-application.yml@v1
     with:
       image-name: my-app
@@ -352,10 +377,11 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop')
     uses: ffbarrie/workflow-actions/.github/workflows/release-node-library.yml@v1
     secrets:
       npm-token: ${{ secrets.NPM_TOKEN }}
@@ -385,10 +411,11 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop')
     uses: ffbarrie/workflow-actions/.github/workflows/release-node-application.yml@v1
     with:
       image-name: my-app
