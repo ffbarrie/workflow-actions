@@ -11,7 +11,11 @@ description: >
   just-tagged version as a bare number (e.g. tag v1.1.0, and the next
   snapshot is 1.1.0, applied as 1.1.0-SNAPSHOT) — Node has no SNAPSHOT
   concept and is unaffected. Other branches skip the tag comparison
-  entirely but still validate the version's format.
+  entirely but still validate the version's format. "develop"/"main" here
+  mean github.ref_name by default, or the branch input when set — use
+  that to apply develop's rules from a job whose actual ref is something
+  else, e.g. proposing develop's next SNAPSHOT from a release job
+  triggered on main.
   Assumes checkout has already happened, with fetch-depth: 0 (tag history
   is required for the comparison) — and that language tooling (Node/npm
   or Java/Maven) is already set up, e.g. via setup-node or
@@ -41,6 +45,16 @@ inputs:
       finding the closest prior tag to compare against on develop/main.
     required: false
     default: "v"
+  branch:
+    description: >
+      Overrides which branch's rules apply (develop vs main vs other),
+      instead of the default github.ref_name. Needed when a job needs
+      develop's SNAPSHOT/relaxed-comparison semantics but is actually
+      running in a different ref's context — e.g. a release job
+      triggered by a main-bound PR merge that also proposes the next
+      develop SNAPSHOT on a throwaway branch.
+    required: false
+    default: ""
   update-application-release-yaml:
     description: Java only — also write app.version into application-release.yaml
     required: false
@@ -77,7 +91,7 @@ runs:
         LANGUAGE: ${{ inputs.language }}
         VERSION: ${{ inputs.version }}
         TAG_PREFIX: ${{ inputs.tag-prefix }}
-        BRANCH: ${{ github.ref_name }}
+        BRANCH: ${{ inputs.branch != '' && inputs.branch || github.ref_name }}
       run: |
         fail() {
           echo "::error::set-version: $1" >&2
