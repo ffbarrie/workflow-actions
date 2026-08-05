@@ -107,6 +107,45 @@ jobs:
           registry-password: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+### [set-version](actions/set-version)
+
+Validates a human-entered version and writes it into the project's version
+file(s) — `package.json` for Node, `pom.xml` (and optionally
+`application-release.yaml`'s `app.version` key) for Java. On `develop`/`main`
+the version must be strictly greater than the closest existing release tag
+reachable from HEAD; other branches skip that comparison but still validate
+the version's format. Returns `success`, `error-message`, and
+`validated-version` as outputs — the step also fails (non-zero exit) on
+invalid input, so add `if: always()` on any later step that needs to read
+the outputs after a failure.
+
+Unlike the other actions here, `set-version` never checks out the repo
+itself — it always assumes a prior step already did, **with
+`fetch-depth: 0`** (full tag history is required for the comparison), and
+that Node/npm or Java/Maven tooling is already set up. It also doesn't
+commit, tag, or push anything; that's left to later steps in the calling
+workflow.
+
+```yaml
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ffbarrie/workflow-actions/actions/setup-java-maven@v1
+        with:
+          checkout: false
+          java-version: "21"
+      - uses: ffbarrie/workflow-actions/actions/set-version@v1
+        id: version
+        with:
+          language: java
+          version: ${{ github.event.inputs.version }}
+      - run: mvn -B -Prelease deploy
+```
+
 ## Chaining multiple actions in one job
 
 Each action above checks out the repo by default, since each also works
