@@ -1,0 +1,62 @@
+name: get-version
+description: >
+  Reads the project's current version from its version file — pom.xml for
+  Java, package.json for Node — and reports it split into the raw value
+  and the SNAPSHOT-stripped base version. Read-only: makes no changes and
+  compares against nothing. Assumes checkout has already happened and
+  that language tooling (Node/npm or Java/Maven) is already set up, e.g.
+  via setup-node or setup-java-maven earlier in the same job.
+
+inputs:
+  language:
+    description: Which version file to read — "node" or "java"
+    required: true
+  working-directory:
+    description: Directory containing package.json or pom.xml
+    required: false
+    default: "."
+
+outputs:
+  version:
+    description: The raw current version, e.g. "1.1.0-SNAPSHOT" or "1.1.0"
+    value: ${{ steps.read.outputs.version }}
+  base-version:
+    description: The version with any -SNAPSHOT suffix stripped, e.g. "1.1.0"
+    value: ${{ steps.read.outputs.base-version }}
+  is-snapshot:
+    description: "'true' if the raw version ends in -SNAPSHOT, 'false' otherwise"
+    value: ${{ steps.read.outputs.is-snapshot }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read version
+      id: read
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        LANGUAGE: ${{ inputs.language }}
+      run: |
+        set -euo pipefail
+
+        if [ "$LANGUAGE" != "node" ] && [ "$LANGUAGE" != "java" ]; then
+          echo "::error::get-version: language must be 'node' or 'java', got '$LANGUAGE'"
+          exit 1
+        fi
+
+        if [ "$LANGUAGE" = "node" ]; then
+          version=$(node -p "require('./package.json').version")
+        else
+          version=$(mvn -B -q -Dexec.executable=echo -Dexec.args='${project.version}' \
+            org.codehaus.mojo:exec-maven-plugin:3.1.0:exec)
+        fi
+
+        base_version="${version%-SNAPSHOT}"
+        is_snapshot=false
+        if [ "$base_version" != "$version" ]; then
+          is_snapshot=true
+        fi
+
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "base-version=$base_version" >> "$GITHUB_OUTPUT"
+        echo "is-snapshot=$is_snapshot" >> "$GITHUB_OUTPUT"
