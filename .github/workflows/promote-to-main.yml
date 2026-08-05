@@ -1,0 +1,84 @@
+name: promote-to-main
+
+# Reusable workflow only — no trigger of its own. The calling repo needs
+# its own thin workflow_dispatch wrapper that does:
+#   uses: ffbarrie/workflow-actions/.github/workflows/promote-to-main.yml@v1
+# so a human explicitly kicks this off from develop, rather than it firing
+# automatically on every push.
+#
+# Computes the release version from develop's current SNAPSHOT and opens
+# the develop -> main promote PR. Does not build, test, publish, commit,
+# or tag anything — the actual release work happens on main, triggered by
+# this PR's merge (see release-*.yml), which re-derives the same version
+# via get-version rather than trusting anything carried over from here.
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: Which version file to read — "node" or "java"
+        type: string
+        required: true
+      working-directory:
+        type: string
+        required: false
+        default: "."
+      java-version:
+        type: string
+        required: false
+        default: "21"
+      node-version:
+        type: string
+        required: false
+        default: "24"
+      runs-on:
+        type: string
+        required: false
+        default: ubuntu-latest
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  promote:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Require develop
+        shell: bash
+        run: |
+          if [ "${{ github.ref_name }}" != "develop" ]; then
+            echo "::error::promote-to-main must be run from develop (was triggered from ${{ github.ref_name }})"
+            exit 1
+          fi
+
+      - name: Set up Java + Maven
+        if: inputs.language == 'java'
+        uses: ffbarrie/workflow-actions/actions/setup-java-maven@v1
+        with:
+          java-version: ${{ inputs.java-version }}
+
+      - name: Set up Node
+        if: inputs.language == 'node'
+        uses: ffbarrie/workflow-actions/actions/setup-node@v1
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Get current version
+        id: current
+        uses: ffbarrie/workflow-actions/actions/get-version@v1
+        with:
+          language: ${{ inputs.language }}
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Open promote PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.current.outputs.base-version }}
+        run: |
+          set -euo pipefail
+          gh pr create \
+            --base main \
+            --head develop \
+            --title "Promote develop into main for version ${VERSION}" \
+            --body "Automated release promotion, opened by promote-to-main.yml. Releasing version ${VERSION}."

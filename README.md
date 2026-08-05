@@ -220,3 +220,32 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+## Workflows
+
+### [promote-to-main.yml](.github/workflows/promote-to-main.yml)
+
+Reusable workflow, not a composite action — it's the first half of a
+release: computes the release version from `develop`'s current SNAPSHOT
+(via `get-version`) and opens the `develop` → `main` promote PR. It
+doesn't build, test, publish, commit, or tag anything; the actual release
+work happens on `main`, triggered by that PR's merge, which re-derives
+the same version independently rather than trusting anything carried over
+from this run.
+
+It has no trigger of its own — the calling repo needs a thin
+`workflow_dispatch` wrapper so a human explicitly kicks off a release from
+`develop`, rather than this firing automatically on every push. Fails
+loudly if triggered from any branch other than `develop`.
+
+```yaml
+# .github/workflows/release.yml, in the consuming repo
+on:
+  workflow_dispatch:
+
+jobs:
+  promote:
+    uses: ffbarrie/workflow-actions/.github/workflows/promote-to-main.yml@v1
+    with:
+      language: java
+```
