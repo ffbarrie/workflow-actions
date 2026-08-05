@@ -4,18 +4,18 @@ description: >
   version file(s) — package.json for Node, pom.xml (and optionally
   application-release.yaml) for Java. On main, the version must be
   strictly greater than the closest existing release tag reachable from
-  HEAD (git describe --tags --abbrev=0, matching tag-prefix). On develop
-  with language: java specifically, -SNAPSHOT is appended to the applied
-  version and the comparison relaxes to greater-than-or-equal, since
-  develop right after a release resync legitimately holds the
-  just-tagged version as a bare number (e.g. tag v1.1.0, and the next
-  snapshot is 1.1.0, applied as 1.1.0-SNAPSHOT) — Node has no SNAPSHOT
-  concept and is unaffected. Other branches skip the tag comparison
-  entirely but still validate the version's format. "develop"/"main" here
-  mean github.ref_name by default, or the branch input when set — use
-  that to apply develop's rules from a job whose actual ref is something
-  else, e.g. proposing develop's next SNAPSHOT from a release job
-  triggered on main.
+  HEAD (git describe --tags --abbrev=0, matching tag-prefix). On develop,
+  a hardcoded per-language dev suffix is appended to the applied version
+  (-SNAPSHOT for java, -dev for node) and the comparison relaxes to
+  greater-than-or-equal, since develop right after a release resync
+  legitimately holds the just-tagged version as a bare number (e.g. tag
+  v1.1.0, and the next dev version is 1.1.0, applied as 1.1.0-SNAPSHOT or
+  1.1.0-dev). Other branches skip the tag comparison entirely but still
+  validate the version's format. "develop"/"main" here mean
+  github.ref_name by default, or the branch input when set — use that to
+  apply develop's rules from a job whose actual ref is something else,
+  e.g. proposing develop's next dev version from a release job triggered
+  on main.
   Assumes checkout has already happened, with fetch-depth: 0 (tag history
   is required for the comparison) — and that language tooling (Node/npm
   or Java/Maven) is already set up, e.g. via setup-node or
@@ -77,8 +77,8 @@ outputs:
   validated-version:
     description: >
       The version that was validated and applied — no leading v, and
-      with -SNAPSHOT appended when language is java and the branch is
-      develop. Empty on failure.
+      with the per-language dev suffix appended (-SNAPSHOT for java,
+      -dev for node) when the branch is develop. Empty on failure.
     value: ${{ steps.validate.outputs.validated-version }}
 
 runs:
@@ -120,19 +120,23 @@ runs:
           fail "version '$VERSION' is not a valid X.Y.Z semantic version"
         fi
 
-        snapshot=false
-        if [ "$LANGUAGE" = "java" ] && [ "$BRANCH" = "develop" ]; then
-          snapshot=true
+        dev_suffix=""
+        if [ "$BRANCH" = "develop" ]; then
+          case "$LANGUAGE" in
+            java) dev_suffix="-SNAPSHOT" ;;
+            node) dev_suffix="-dev" ;;
+          esac
         fi
 
         if [ "$BRANCH" = "develop" ] || [ "$BRANCH" = "main" ]; then
           closest_tag=$(git describe --tags --abbrev=0 --match "${TAG_PREFIX}[0-9]*.[0-9]*.[0-9]*" 2>/dev/null || true)
           if [ -n "$closest_tag" ]; then
             closest_version="${closest_tag#"$TAG_PREFIX"}"
-            if [ "$snapshot" = true ]; then
-              # develop, java: the next snapshot may legitimately equal the
+            if [ -n "$dev_suffix" ]; then
+              # develop: the next dev version may legitimately equal the
               # closest tag (e.g. right after a release resync, tag v1.1.0
-              # and pom.xml both read 1.1.0) — only regressing below it is invalid.
+              # and the version file both read 1.1.0) — only regressing
+              # below it is invalid.
               if version_gt "$closest_version" "$version"; then
                 fail "version $version is less than $closest_tag, the closest existing release tag on $BRANCH"
               fi
@@ -142,10 +146,7 @@ runs:
           fi
         fi
 
-        final_version="$version"
-        if [ "$snapshot" = true ]; then
-          final_version="${version}-SNAPSHOT"
-        fi
+        final_version="${version}${dev_suffix}"
 
         echo "success=true" >> "$GITHUB_OUTPUT"
         echo "error-message=" >> "$GITHUB_OUTPUT"

@@ -24,9 +24,9 @@ name: release-node-library
 # develop, for a human to edit before merging if a different bump is
 # wanted.
 #
-# Node has no SNAPSHOT convention (that's Java-specific), so unlike the
-# Java release workflows, the proposed next version is a plain number —
-# no suffix — applied the same way a release version is.
+# Node's dev suffix is -dev (set-version's hardcoded per-language
+# convention, mirroring Java's -SNAPSHOT), so the proposed next develop
+# version comes back from set-version as e.g. 1.2.0-dev.
 #
 # Root package.json only for now — this doesn't handle a monorepo's child
 # packages (deliberately deferred).
@@ -175,6 +175,7 @@ jobs:
           version: ${{ steps.next.outputs.version }}
           working-directory: ${{ inputs.working-directory }}
           tag-prefix: ${{ inputs.tag-prefix }}
+          branch: develop
 
       - name: Commit and open sync-back PR
         shell: bash
