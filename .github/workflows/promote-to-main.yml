@@ -54,19 +54,19 @@ jobs:
 
       - name: Set up Java + Maven
         if: inputs.language == 'java'
-        uses: ./actions/setup-java-maven
+        uses: ffbarrie/workflow-actions/actions/setup-java-maven@v1
         with:
           java-version: ${{ inputs.java-version }}
 
       - name: Set up Node
         if: inputs.language == 'node'
-        uses: ./actions/setup-node
+        uses: ffbarrie/workflow-actions/actions/setup-node@v1
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Get current version
         id: current
-        uses: ./actions/get-version
+        uses: ffbarrie/workflow-actions/actions/get-version@v1
         with:
           language: ${{ inputs.language }}
           working-directory: ${{ inputs.working-directory }}
