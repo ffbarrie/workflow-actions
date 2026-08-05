@@ -97,7 +97,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Node
-        uses: ./actions/setup-node
+        uses: ffbarrie/workflow-actions/actions/setup-node@v1
         with:
           checkout: false
           node-version: ${{ inputs.node-version }}
@@ -109,14 +109,14 @@ jobs:
 
       - name: Get current version
         id: current
-        uses: ./actions/get-version
+        uses: ffbarrie/workflow-actions/actions/get-version@v1
         with:
           language: node
           working-directory: ${{ inputs.working-directory }}
 
       - name: Set release version
         id: release-version
-        uses: ./actions/set-version
+        uses: ffbarrie/workflow-actions/actions/set-version@v1
         with:
           language: node
           version: ${{ steps.current.outputs.base-version }}
@@ -169,7 +169,7 @@ jobs:
 
       - name: Set next development version
         id: next-version
-        uses: ./actions/set-version
+        uses: ffbarrie/workflow-actions/actions/set-version@v1
         with:
           language: node
           version: ${{ steps.next.outputs.version }}
