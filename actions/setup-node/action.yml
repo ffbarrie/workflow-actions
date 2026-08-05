@@ -62,6 +62,16 @@ inputs:
       default git clean wiping out anything built since that checkout.
     required: false
     default: "true"
+  fetch-depth:
+    description: >
+      Passed straight through to actions/checkout's fetch-depth. The
+      default (1) is a shallow clone with no tag history; set to 0 for
+      full history when a later step needs it — e.g. set-version's
+      closest-existing-tag comparison, which silently finds no tags (and
+      so silently skips its own check) on a shallow clone. Ignored when
+      checkout is false.
+    required: false
+    default: "1"
 
 runs:
   using: composite
@@ -69,6 +79,8 @@ runs:
     - name: Checkout
       if: inputs.checkout == 'true'
       uses: actions/checkout@v7
+      with:
+        fetch-depth: ${{ inputs.fetch-depth }}
 
     - name: Set up pnpm
       if: inputs.package-manager == 'pnpm'
