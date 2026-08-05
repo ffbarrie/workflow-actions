@@ -389,3 +389,53 @@ jobs:
       registry-username: ${{ secrets.NEXUS_USERNAME }}
       registry-password: ${{ secrets.NEXUS_PASSWORD }}
 ```
+
+### [build-test-java.yml](.github/workflows/build-test-java.yml)
+
+Regular CI — `mvn verify` — shared by both Java library and application
+repos, since compiling and testing doesn't care which the artifact
+eventually becomes; that only matters at release time. `build-image` is
+an application-repo opt-in: a validation-only `docker build` (no push)
+that catches Dockerfile problems in CI instead of at release time.
+Libraries have no Dockerfile and leave it at the default `false`.
+
+```yaml
+# .github/workflows/ci.yml, in the consuming repo
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  ci:
+    uses: ffbarrie/workflow-actions/.github/workflows/build-test-java.yml@v1
+    secrets: inherit
+```
+
+### [build-test-node-library.yml](.github/workflows/build-test-node-library.yml) and [build-test-node-application.yml](.github/workflows/build-test-node-application.yml)
+
+Regular CI for Node — lint/build/test — kept as two separate workflows
+rather than one branching on both package-manager *and*
+monorepo-vs-single-package. `build-test-node-library.yml` is
+workspace-aware (`pnpm --recursive`, `yarn workspaces foreach`, etc.) for
+the monorepo case; `build-test-node-application.yml` uses plain
+single-package commands and adds the same `build-image` Dockerfile
+validation opt-in as `build-test-java.yml`. Set `lint-command: ""` to
+skip linting.
+
+```yaml
+# .github/workflows/ci.yml, in the consuming repo
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  ci:
+    uses: ffbarrie/workflow-actions/.github/workflows/build-test-node-application.yml@v1
+    with:
+      package-manager: pnpm
+    secrets: inherit
+```
