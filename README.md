@@ -10,7 +10,11 @@ Checks out the repo, installs a JDK (default 21) with Maven dependency
 caching, and optionally writes `~/.m2/settings.xml` with one or more
 `<server>` credential entries. Servers are given as plain newline-delimited
 lists — `server-ids`, `server-usernames`, and `server-passwords` — paired up
-by line position, so no JSON is needed even for multiple servers. Pass
+by line position, so no JSON is needed even for multiple servers. This
+write is authoritative — it replaces the whole file, including
+`actions/setup-java`'s own default `github` server entry (it writes one
+using `GITHUB_ACTOR`/`GITHUB_TOKEN` whether or not you asked for it); the
+example below includes `github` explicitly for exactly that reason. Pass
 `checkout: false` if a prior step in the job already checked the repo out
 — see [Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
 `fetch-depth` (default `1`, passed straight through to `actions/checkout`)

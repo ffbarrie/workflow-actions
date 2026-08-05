@@ -87,8 +87,13 @@ jobs:
         shell: bash
         working-directory: ${{ inputs.working-directory }}
         env:
-          MAVEN_ARGS: ${{ inputs.maven-args }}
-        run: mvn -B verify $MAVEN_ARGS
+          # Not named MAVEN_ARGS: actions/setup-java exports its own
+          # MAVEN_ARGS (e.g. -ntp) into the job environment, and a step's
+          # own env: fully replaces a variable of the same name rather
+          # than appending to it — declaring MAVEN_ARGS here would
+          # silently clobber that with maven-args' default empty string.
+          EXTRA_MAVEN_ARGS: ${{ inputs.maven-args }}
+        run: mvn -B verify $MAVEN_ARGS $EXTRA_MAVEN_ARGS
 
       - name: Validate container image build
         if: inputs.build-image
