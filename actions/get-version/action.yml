@@ -55,7 +55,7 @@ runs:
           dev_suffix="-SNAPSHOT"
         fi
 
-        base_version="${version%$dev_suffix}"
+        base_version="${version%"$dev_suffix"}"
         is_snapshot=false
         if [ "$base_version" != "$version" ]; then
           is_snapshot=true

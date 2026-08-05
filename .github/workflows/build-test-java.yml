@@ -93,7 +93,9 @@ jobs:
           # than appending to it — declaring MAVEN_ARGS here would
           # silently clobber that with maven-args' default empty string.
           EXTRA_MAVEN_ARGS: ${{ inputs.maven-args }}
-        run: mvn -B verify $MAVEN_ARGS $EXTRA_MAVEN_ARGS
+        run: |
+          # shellcheck disable=SC2086  # intentional: both vars may hold multiple space-separated flags that need to word-split into separate mvn arguments
+          mvn -B verify $MAVEN_ARGS $EXTRA_MAVEN_ARGS
 
       - name: Validate container image build
         if: inputs.build-image
