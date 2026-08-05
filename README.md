@@ -249,3 +249,39 @@ jobs:
     with:
       language: java
 ```
+
+### [release-java-library.yml](.github/workflows/release-java-library.yml)
+
+Second half of the release, for Java library repos that publish jars via
+`mvn deploy`. Runs on `main` right after `promote-to-main.yml`'s PR
+merges: re-derives the release version independently (`get-version` +
+`set-version`, not trusting anything carried over from that PR), builds
+and `mvn deploy`s the library, then tags the release — then proposes the
+next `develop` SNAPSHOT (a minor version bump) as a PR back to `develop`,
+for a human to edit before merging if a different bump is wanted.
+
+The release commit is never pushed to the `main` branch ref itself, only
+as the tag it points to — `main` is typically branch-protected, and a
+plain branch push would be rejected, while a tag push needs no special
+bypass configuration in the calling repo. `pull_request`'s `github.ref` is
+the PR's merge ref, not the target branch, and that ref is gone once the
+PR closes — so every checkout here is pinned to an explicit `ref: main`.
+
+Like `promote-to-main.yml`, this has no trigger of its own:
+
+```yaml
+# .github/workflows/release.yml, in the consuming repo
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    uses: ffbarrie/workflow-actions/.github/workflows/release-java-library.yml@v1
+    secrets:
+      maven-server-ids: github
+      maven-server-usernames: ${{ github.actor }}
+      maven-server-passwords: ${{ secrets.GITHUB_TOKEN }}
+```
