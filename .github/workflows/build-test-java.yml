@@ -75,7 +75,7 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     steps:
       - name: Set up Java + Maven
-        uses: ./actions/setup-java-maven
+        uses: ffbarrie/workflow-actions/actions/setup-java-maven@v1
         with:
           java-version: ${{ inputs.java-version }}
           distribution: ${{ inputs.distribution }}

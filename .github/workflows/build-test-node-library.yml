@@ -83,7 +83,7 @@ jobs:
       NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
     steps:
       - name: Set up Node
-        uses: ./actions/setup-node
+        uses: ffbarrie/workflow-actions/actions/setup-node@v1
         with:
           node-version: ${{ inputs.node-version }}
           package-manager: ${{ inputs.package-manager }}
