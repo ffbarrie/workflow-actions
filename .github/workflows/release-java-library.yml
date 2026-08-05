@@ -43,6 +43,11 @@ on:
         type: string
         required: false
         default: "v"
+      gpg-sign:
+        description: Import gpg-private-key and sign artifacts during deploy
+        type: boolean
+        required: false
+        default: false
       runs-on:
         type: string
         required: false
@@ -83,7 +88,7 @@ jobs:
           server-passwords: ${{ secrets.maven-server-passwords }}
 
       - name: Import GPG key
-        if: secrets.gpg-private-key != ''
+        if: inputs.gpg-sign
         uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.gpg-private-key }}

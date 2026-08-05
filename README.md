@@ -269,6 +269,10 @@ PR closes — so every checkout here is pinned to an explicit `ref: main`.
 
 Like `promote-to-main.yml`, this has no trigger of its own:
 
+Optional GPG signing: pass `gpg-sign: true` and provide `gpg-private-key` /
+`gpg-passphrase` secrets. Secrets cannot appear in step `if` conditions, so
+signing is gated by this input instead.
+
 ```yaml
 # .github/workflows/release.yml, in the consuming repo
 on:
