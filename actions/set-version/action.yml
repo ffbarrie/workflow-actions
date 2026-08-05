@@ -40,9 +40,12 @@ inputs:
     required: false
     default: "false"
   application-release-yaml-path:
-    description: Path to application-release.yaml, relative to working-directory. Only used when update-application-release-yaml is true.
+    description: >
+      Path to application-release.yaml, relative to working-directory.
+      Defaults to the standard Maven/Spring Boot resources location. Only
+      used when update-application-release-yaml is true.
     required: false
-    default: "application-release.yaml"
+    default: "src/main/resources/application-release.yaml"
 
 outputs:
   success:

@@ -111,9 +111,11 @@ jobs:
 
 Validates a human-entered version and writes it into the project's version
 file(s) — `package.json` for Node, `pom.xml` (and optionally
-`application-release.yaml`'s `app.version` and `app.build` keys — `app.build`
-is a UTC build timestamp, `yyyy-MM-ddTHH:mm:ssZ`, matching the existing
-PowerShell release scripts' convention) for Java. On `develop`/`main`
+`src/main/resources/application-release.yaml`'s `app.version` and
+`app.build` keys, following the standard Maven/Spring Boot resources
+layout — `app.build` is a UTC build timestamp, `yyyy-MM-ddTHH:mm:ssZ`,
+matching the existing PowerShell release scripts' convention) for Java.
+On `develop`/`main`
 the version must be strictly greater than the closest existing release tag
 reachable from HEAD; other branches skip that comparison but still validate
 the version's format. Returns `success`, `error-message`, and
