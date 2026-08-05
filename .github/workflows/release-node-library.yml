@@ -1,0 +1,195 @@
+name: release-node-library
+
+# Reusable workflow only — no trigger of its own. The calling repo needs
+# its own thin wrapper:
+#
+#   on:
+#     pull_request:
+#       types: [closed]
+#       branches: [main]
+#   jobs:
+#     release:
+#       if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+#       uses: ffbarrie/workflow-actions/.github/workflows/release-node-library.yml@v1
+#       secrets: inherit
+#
+# Runs on main right after promote-to-main.yml's PR merges. Re-derives the
+# release version independently (get-version + set-version) rather than
+# trusting anything carried over from that PR, publishes the tarball, then
+# tags the release. The release commit is never pushed to the main branch
+# ref itself — only as the tag it points to, since main is typically
+# branch-protected and a plain branch push would be rejected; pushing just
+# a tag needs no special bypass configuration in the calling repo. Finally
+# proposes the next develop version (a minor bump) as a PR back to
+# develop, for a human to edit before merging if a different bump is
+# wanted.
+#
+# Node has no SNAPSHOT convention (that's Java-specific), so unlike the
+# Java release workflows, the proposed next version is a plain number —
+# no suffix — applied the same way a release version is.
+#
+# Root package.json only for now — this doesn't handle a monorepo's child
+# packages (deliberately deferred).
+#
+# pull_request's github.ref is the PR's merge ref, not the target branch,
+# and that ref is gone once the PR closes — so every checkout here is
+# pinned to an explicit ref: main rather than relying on the default.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        required: false
+        default: "24"
+      package-manager:
+        type: string
+        required: false
+        default: npm
+      working-directory:
+        type: string
+        required: false
+        default: "."
+      tag-prefix:
+        type: string
+        required: false
+        default: "v"
+      registry-url:
+        type: string
+        required: false
+        default: https://registry.npmjs.org
+      scope:
+        type: string
+        required: false
+        default: ""
+      publish-command:
+        type: string
+        required: false
+        default: npm publish
+      runs-on:
+        type: string
+        required: false
+        default: ubuntu-latest
+    secrets:
+      npm-token:
+        description: Auth token for the target registry — used for both installing and publishing
+        required: false
+      npmrc:
+        description: >
+          Optional full .npmrc content, for anything registry-url/scope
+          can't express. Takes precedence over registry-url/scope when set.
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ${{ inputs.runs-on }}
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: ./actions/setup-node
+        with:
+          checkout: false
+          node-version: ${{ inputs.node-version }}
+          package-manager: ${{ inputs.package-manager }}
+          working-directory: ${{ inputs.working-directory }}
+          registry-url: ${{ inputs.registry-url }}
+          scope: ${{ inputs.scope }}
+          npmrc: ${{ secrets.npmrc }}
+
+      - name: Get current version
+        id: current
+        uses: ./actions/get-version
+        with:
+          language: node
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Set release version
+        id: release-version
+        uses: ./actions/set-version
+        with:
+          language: node
+          version: ${{ steps.current.outputs.base-version }}
+          working-directory: ${{ inputs.working-directory }}
+          tag-prefix: ${{ inputs.tag-prefix }}
+
+      - name: Publish
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          PUBLISH_COMMAND: ${{ inputs.publish-command }}
+        run: eval "$PUBLISH_COMMAND"
+
+      - name: Commit and tag release
+        id: tag
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          VERSION: ${{ steps.release-version.outputs.validated-version }}
+          TAG_PREFIX: ${{ inputs.tag-prefix }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json; [ -f package-lock.json ] && git add package-lock.json || true
+          git commit -m "release: ${VERSION}"
+          tag="${TAG_PREFIX}${VERSION}"
+          git tag "$tag"
+          # Only the tag is pushed — never main itself, which is
+          # branch-protected; this commit is reachable solely via the tag.
+          git push origin "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next development version
+        id: next
+        shell: bash
+        env:
+          RELEASED_VERSION: ${{ steps.release-version.outputs.validated-version }}
+        run: |
+          set -euo pipefail
+          IFS='.' read -r major minor _patch <<< "$RELEASED_VERSION"
+          echo "version=${major}.$((minor + 1)).0" >> "$GITHUB_OUTPUT"
+
+      - name: Create next-development branch
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          NEXT_VERSION: ${{ steps.next.outputs.version }}
+        run: git checkout -b "release/next-version-${NEXT_VERSION}"
+
+      - name: Set next development version
+        id: next-version
+        uses: ./actions/set-version
+        with:
+          language: node
+          version: ${{ steps.next.outputs.version }}
+          working-directory: ${{ inputs.working-directory }}
+          tag-prefix: ${{ inputs.tag-prefix }}
+
+      - name: Commit and open sync-back PR
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_VERSION: ${{ steps.next-version.outputs.validated-version }}
+        run: |
+          set -euo pipefail
+          branch=$(git rev-parse --abbrev-ref HEAD)
+          git add package.json; [ -f package-lock.json ] && git add package-lock.json || true
+          git commit -m "chore: bump to ${NEXT_VERSION}"
+          git push origin "$branch"
+          gh pr create \
+            --base develop \
+            --head "$branch" \
+            --title "Bump develop to ${NEXT_VERSION}" \
+            --body "Automated post-release version bump, opened by release-node-library.yml. Edit the version in this PR before merging if a different bump (patch/major instead of minor) is wanted."
