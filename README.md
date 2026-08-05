@@ -113,6 +113,28 @@ jobs:
           registry-password: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+### [get-version](actions/get-version)
+
+Read-only: reads the project's current version from its version file —
+`pom.xml` for Java, `package.json` for Node — and reports it as `version`
+(raw, e.g. `1.1.0-SNAPSHOT`), `base-version` (SNAPSHOT suffix stripped,
+e.g. `1.1.0`), and `is-snapshot`. Makes no changes and compares against
+nothing — it's the shared "what does the file currently say" building
+block behind both halves of a release: computing the release version from
+develop's current SNAPSHOT, and re-deriving that same version on `main`
+right after the promote PR merges (which carries the SNAPSHOT-suffixed
+value over as-is).
+
+Same assumptions as `set-version`: no checkout of its own, and language
+tooling already set up by a prior step.
+
+```yaml
+- uses: ffbarrie/workflow-actions/actions/setup-java-maven@v1
+- uses: ffbarrie/workflow-actions/actions/get-version@v1
+  id: current
+- run: echo "Releasing ${{ steps.current.outputs.base-version }}"
+```
+
 ### [set-version](actions/set-version)
 
 Validates a human-entered version and writes it into the project's version
@@ -121,13 +143,21 @@ file(s) — `package.json` for Node, `pom.xml` (and optionally
 `app.build` keys, following the standard Maven/Spring Boot resources
 layout — `app.build` is a UTC build timestamp, `yyyy-MM-ddTHH:mm:ssZ`,
 matching the existing PowerShell release scripts' convention) for Java.
-On `develop`/`main`
-the version must be strictly greater than the closest existing release tag
-reachable from HEAD; other branches skip that comparison but still validate
-the version's format. Returns `success`, `error-message`, and
-`validated-version` as outputs — the step also fails (non-zero exit) on
-invalid input, so add `if: always()` on any later step that needs to read
-the outputs after a failure.
+
+On `main`, the version must be strictly greater than the closest existing
+release tag reachable from HEAD. On `develop` with `language: java`
+specifically, `-SNAPSHOT` is appended to the applied version and the
+comparison relaxes to greater-than-or-*equal* — right after a release
+resync, `develop` legitimately holds the just-tagged version as a bare
+number (tag `v1.1.0`, file says `1.1.0`), and the next snapshot based on
+that same number (`1.1.0-SNAPSHOT`) is exactly what continues development.
+Node has no SNAPSHOT concept and is unaffected. Other branches skip the
+tag comparison entirely but still validate the version's format.
+
+Returns `success`, `error-message`, and `validated-version` (the version
+actually applied, including any `-SNAPSHOT` suffix) as outputs — the step
+also fails (non-zero exit) on invalid input, so add `if: always()` on any
+later step that needs to read the outputs after a failure.
 
 Unlike the other actions here, `set-version` never checks out the repo
 itself — it always assumes a prior step already did, **with
