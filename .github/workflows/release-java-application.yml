@@ -1,0 +1,207 @@
+name: release-java-application
+
+# Reusable workflow only — no trigger of its own. The calling repo needs
+# its own thin wrapper:
+#
+#   on:
+#     pull_request:
+#       types: [closed]
+#       branches: [main]
+#   jobs:
+#     release:
+#       if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+#       uses: ffbarrie/workflow-actions/.github/workflows/release-java-application.yml@v1
+#       with:
+#         image-name: my-app
+#         registry: registry.internal.example.com
+#       secrets: inherit
+#
+# Runs on main right after promote-to-main.yml's PR merges. Re-derives the
+# release version independently (get-version + set-version) rather than
+# trusting anything carried over from that PR, builds the jar, then builds,
+# scans, and pushes the Docker image (tagged with the release version and
+# latest) via docker-build-scan-push, then tags the release. The release
+# commit is never pushed to the main branch ref itself — only as the tag
+# it points to, since main is typically branch-protected and a plain
+# branch push would be rejected; pushing just a tag needs no special
+# bypass configuration in the calling repo. Finally proposes the next
+# develop SNAPSHOT (a minor version bump) as a PR back to develop, for a
+# human to edit before merging if a different bump is wanted.
+#
+# pull_request's github.ref is the PR's merge ref, not the target branch,
+# and that ref is gone once the PR closes — so every checkout here is
+# pinned to an explicit ref: main rather than relying on the default.
+# docker-build-scan-push's own checkout is disabled for the same reason,
+# and also because its default git clean would wipe out the jar just
+# built by the build-command step.
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        type: string
+        required: false
+        default: "21"
+      working-directory:
+        type: string
+        required: false
+        default: "."
+      tag-prefix:
+        type: string
+        required: false
+        default: "v"
+      build-command:
+        description: Command that produces the jar docker-build-scan-push's Dockerfile expects to COPY in
+        type: string
+        required: false
+        default: mvn -B package
+      image-name:
+        type: string
+        required: true
+      registry:
+        type: string
+        required: true
+      dockerfile:
+        type: string
+        required: false
+        default: Dockerfile
+      runs-on:
+        type: string
+        required: false
+        default: ubuntu-latest
+    secrets:
+      maven-server-ids:
+        required: false
+      maven-server-usernames:
+        required: false
+      maven-server-passwords:
+        required: false
+      registry-username:
+        required: false
+      registry-password:
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Java + Maven
+        uses: ./actions/setup-java-maven
+        with:
+          checkout: false
+          java-version: ${{ inputs.java-version }}
+          server-ids: ${{ secrets.maven-server-ids }}
+          server-usernames: ${{ secrets.maven-server-usernames }}
+          server-passwords: ${{ secrets.maven-server-passwords }}
+
+      - name: Get current version
+        id: current
+        uses: ./actions/get-version
+        with:
+          language: java
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Set release version
+        id: release-version
+        uses: ./actions/set-version
+        with:
+          language: java
+          version: ${{ steps.current.outputs.base-version }}
+          working-directory: ${{ inputs.working-directory }}
+          tag-prefix: ${{ inputs.tag-prefix }}
+
+      - name: Build
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          BUILD_COMMAND: ${{ inputs.build-command }}
+        run: eval "$BUILD_COMMAND"
+
+      - name: Build, scan, and push image
+        uses: ./actions/docker-build-scan-push
+        with:
+          checkout: false
+          context: ${{ inputs.working-directory }}
+          dockerfile: ${{ inputs.dockerfile }}
+          image-name: ${{ inputs.image-name }}
+          registry: ${{ inputs.registry }}
+          tags: ${{ steps.release-version.outputs.validated-version }},latest
+          push: true
+          registry-username: ${{ secrets.registry-username }}
+          registry-password: ${{ secrets.registry-password }}
+
+      - name: Commit and tag release
+        id: tag
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          VERSION: ${{ steps.release-version.outputs.validated-version }}
+          TAG_PREFIX: ${{ inputs.tag-prefix }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pom.xml '**/pom.xml'
+          git commit -m "release: ${VERSION}"
+          tag="${TAG_PREFIX}${VERSION}"
+          git tag "$tag"
+          # Only the tag is pushed — never main itself, which is
+          # branch-protected; this commit is reachable solely via the tag.
+          git push origin "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next development version
+        id: next
+        shell: bash
+        env:
+          RELEASED_VERSION: ${{ steps.release-version.outputs.validated-version }}
+        run: |
+          set -euo pipefail
+          IFS='.' read -r major minor _patch <<< "$RELEASED_VERSION"
+          echo "version=${major}.$((minor + 1)).0" >> "$GITHUB_OUTPUT"
+
+      - name: Create next-development branch
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          NEXT_VERSION: ${{ steps.next.outputs.version }}
+        run: git checkout -b "release/next-version-${NEXT_VERSION}"
+
+      - name: Set next development SNAPSHOT
+        id: next-snapshot
+        uses: ./actions/set-version
+        with:
+          language: java
+          version: ${{ steps.next.outputs.version }}
+          working-directory: ${{ inputs.working-directory }}
+          tag-prefix: ${{ inputs.tag-prefix }}
+          branch: develop
+
+      - name: Commit and open sync-back PR
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_VERSION: ${{ steps.next-snapshot.outputs.validated-version }}
+        run: |
+          set -euo pipefail
+          branch=$(git rev-parse --abbrev-ref HEAD)
+          git add pom.xml '**/pom.xml'
+          git commit -m "chore: bump to ${NEXT_VERSION}"
+          git push origin "$branch"
+          gh pr create \
+            --base develop \
+            --head "$branch" \
+            --title "Bump develop to ${NEXT_VERSION}" \
+            --body "Automated post-release version bump, opened by release-java-application.yml. Edit the version in this PR before merging if a different bump (patch/major instead of minor) is wanted."
