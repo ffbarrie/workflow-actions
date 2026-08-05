@@ -83,7 +83,7 @@ jobs:
           server-passwords: ${{ secrets.maven-server-passwords }}
 
       - name: Import GPG key
-        if: ${{ secrets.gpg-private-key != '' }}
+        if: secrets.gpg-private-key != ''
         uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.gpg-private-key }}
