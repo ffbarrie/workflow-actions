@@ -20,10 +20,11 @@ name: build-test-node-library
 # commands) rather than one workflow branching on package-manager AND
 # monorepo-vs-single — a previous release workflow broke production by
 # treating workspace packages independently instead of atomically (see
-# release-node-library.yml and the earlier design discussion), and
-# root-only child-package versioning is still a known, deliberately
-# deferred gap there. Keeping CI's workspace-awareness in its own file
-# keeps that risk visible rather than folded into shared conditionals.
+# release-node-library.yml and the earlier design discussion).
+# release-node-library.yml now forces every non-private packages/*
+# package to the root release version in lockstep, closing that gap.
+# Keeping CI's workspace-awareness in its own file keeps that risk
+# visible rather than folded into shared conditionals.
 
 on:
   workflow_call:
