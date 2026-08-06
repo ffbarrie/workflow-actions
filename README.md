@@ -472,3 +472,32 @@ jobs:
       package-manager: pnpm
     secrets: inherit
 ```
+
+## Validating this repo itself
+
+Unlike every other workflow above, [`self-ci.yml`](.github/workflows/self-ci.yml)
+isn't reusable — it's this repo's own CI, running on every push/PR to
+`develop`/`main`. It automates checks that were previously done by hand,
+ad hoc, during development, so a regression gets caught on the next PR
+instead of the next real-world integration:
+
+- `scripts/validate-yaml.rb` — every `action.yml` and workflow file parses as YAML
+- [`actionlint`](https://github.com/rhysd/actionlint) — GitHub Actions semantics for `.github/workflows/*.yml`, including its own shellcheck pass on `run:` steps there
+- `scripts/shellcheck-actions.sh` — shellchecks composite actions' embedded `run:` blocks directly, since actionlint's schema doesn't understand `action.yml` and won't lint those otherwise
+
+Run any of these locally the same way CI does:
+
+```bash
+ruby scripts/validate-yaml.rb
+actionlint                          # requires actionlint on PATH
+bash scripts/shellcheck-actions.sh  # requires shellcheck on PATH
+```
+
+`shellcheck-actions.sh` gates on `--severity=warning` — info/style findings
+are suppressed rather than shown, since the residual ones at that
+threshold are known, understood false positives from analyzing extracted
+scripts in isolation (e.g. a Maven `${...}` expression deliberately
+single-quoted so the shell doesn't touch it, or an env var an action sets
+in its own `env:` block that shellcheck can't see from an isolated
+script) — not things worth re-litigating on every run. A genuinely new
+`error`/`warning` finding still fails the build.

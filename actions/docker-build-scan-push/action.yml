@@ -86,10 +86,14 @@ runs:
     - name: Build tag list
       id: tags
       shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE_NAME: ${{ inputs.image-name }}
+        TAGS: ${{ inputs.tags }}
       run: |
         set -euo pipefail
-        image="${{ inputs.registry }}/${{ inputs.image-name }}"
-        IFS=',' read -ra TAG_ARR <<< "${{ inputs.tags }}"
+        image="${REGISTRY}/${IMAGE_NAME}"
+        IFS=',' read -ra TAG_ARR <<< "$TAGS"
         out=""
         for t in "${TAG_ARR[@]}"; do
           # trim leading/trailing whitespace so "v1, latest" (a natural way
@@ -136,9 +140,11 @@ runs:
     - name: Push image
       if: inputs.push == 'true'
       shell: bash
+      env:
+        TAG_LIST: ${{ steps.tags.outputs.list }}
       run: |
         set -euo pipefail
-        IFS=',' read -ra TAG_ARR <<< "${{ steps.tags.outputs.list }}"
+        IFS=',' read -ra TAG_ARR <<< "$TAG_LIST"
         for t in "${TAG_ARR[@]}"; do
           docker push "$t"
         done
