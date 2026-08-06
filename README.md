@@ -483,7 +483,7 @@ instead of the next real-world integration:
 
 - `scripts/validate-yaml.rb` — every `action.yml` and workflow file parses as YAML
 - [`actionlint`](https://github.com/rhysd/actionlint) — GitHub Actions semantics for `.github/workflows/*.yml`, including its own shellcheck pass on `run:` steps there
-- `scripts/shellcheck-actions.sh` — shellchecks composite actions' embedded `run:` blocks directly, since actionlint's schema doesn't understand `action.yml` and won't lint those otherwise
+- `scripts/shellcheck-actions.sh` — shellchecks every composite action's script files directly, since actionlint's schema doesn't understand `action.yml` and gives those zero coverage otherwise
 
 Run any of these locally the same way CI does:
 
@@ -493,11 +493,42 @@ actionlint                          # requires actionlint on PATH
 bash scripts/shellcheck-actions.sh  # requires shellcheck on PATH
 ```
 
-`shellcheck-actions.sh` gates on `--severity=warning` — info/style findings
-are suppressed rather than shown, since the residual ones at that
-threshold are known, understood false positives from analyzing extracted
-scripts in isolation (e.g. a Maven `${...}` expression deliberately
-single-quoted so the shell doesn't touch it, or an env var an action sets
-in its own `env:` block that shellcheck can't see from an isolated
-script) — not things worth re-litigating on every run. A genuinely new
-`error`/`warning` finding still fails the build.
+Every composite action's logic lives in real `.sh` files alongside its
+`action.yml` (e.g. `actions/set-version/validate-version.sh`), invoked via
+`run: ${{ github.action_path }}/script-name.sh` rather than embedded
+inline — a standard pattern for composite actions with real logic, and
+what makes `shellcheck-actions.sh` able to check actual files instead of
+text extracted out of YAML. It's also what makes that logic unit-testable
+at all; see [Testing the core logic](#testing-the-core-logic).
+
+`shellcheck-actions.sh` gates on `--severity=warning` — info/style
+findings are suppressed rather than shown, since they're not worth
+blocking a build over. A genuinely new `error`/`warning` finding still
+fails it.
+
+### Testing the core logic
+
+[`tests/`](tests) holds a [bats-core](https://github.com/bats-core/bats-core)
+suite covering the highest-value, most bug-prone scripts — mainly
+`set-version`'s comparison/dev-suffix rules, `get-version`'s suffix
+stripping, `docker-build-scan-push`'s tag-list construction, and
+`setup-java-maven`'s server-list validation. It mirrors `actions/`'s
+structure (`tests/set-version/validate-version.bats` tests
+`actions/set-version/validate-version.sh`, and so on) and persists what
+was, until this point in the repo's history, only ever manual, ad hoc
+verification run by hand during development — every case in this suite
+was checked at least once that way before being written down here.
+
+```bash
+bats -r tests/                                    # requires bats-core on PATH
+bats tests/set-version/validate-version.bats       # a single file
+```
+
+Each `.bats` file invokes its target script directly (`bash
+actions/X/script.sh`, with inputs set via environment variables the same
+way the composite action's own `env:` block would) rather than going
+through an actual GitHub Actions run — fast, and no network/runner
+dependency, at the cost of not exercising the actual `${{ github.action_path }}`
+invocation mechanism itself. That one detail is only verifiable by an
+actual run on GitHub Actions, same as everything else in this repo that
+depends on real GitHub Actions runtime behavior.
