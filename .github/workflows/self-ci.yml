@@ -52,7 +52,10 @@ jobs:
 
       - name: Install bats-core
         shell: bash
-        run: npm install -g bats
+        # sudo: GitHub-hosted runners' default npm global prefix isn't
+        # writable by the unprivileged runner user (confirmed via a real
+        # CI failure: EACCES on /usr/local/share/man/man7).
+        run: sudo npm install -g bats
 
       - name: Run bats tests
         shell: bash
