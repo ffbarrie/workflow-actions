@@ -254,6 +254,26 @@ job's `if:` — it has to explicitly allow `workflow_dispatch` through,
 since `github.event.pull_request` doesn't exist on that trigger and would
 otherwise evaluate the merged/head-ref checks as false.
 
+### The sync-back PR's CI check may need a manual nudge
+
+Every `release-*.yml`'s last step opens the "bump develop" sync-back PR
+using `github.token` (`git push` + `gh pr create`). GitHub Actions has a
+platform-level behavior where activity performed with the default
+`GITHUB_TOKEN` doesn't reliably auto-trigger *other* workflow runs the
+way a human- or PAT-authenticated push would — so the sync-back PR's own
+`pull_request`-triggered CI check (`build-test-*.yml`) may not
+automatically appear, needing a human to manually trigger or approve it
+before the PR can merge (confirmed in real-world testing: the PR is
+authored by `app/github-actions`, and its CI check needed manual
+authorization to run).
+
+This is a real, known limitation across all four release workflows, not
+a bug specific to one of them — left as-is for now since a manual gate
+before merging an auto-generated version-bump PR isn't unreasonable on
+its own. If it becomes real friction, the fix is swapping `github.token`
+for a PAT or GitHub App installation token in that one step, which would
+let the sync-back PR's CI run automatically like any human-created PR.
+
 ### [promote-to-main.yml](.github/workflows/promote-to-main.yml)
 
 Reusable workflow, not a composite action — it's the first half of a
