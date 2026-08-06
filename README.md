@@ -152,6 +152,10 @@ file(s) — `package.json` for Node, `pom.xml` (and optionally
 layout — `app.build` is a UTC build timestamp, `yyyy-MM-ddTHH:mm:ssZ`,
 matching the existing PowerShell release scripts' convention) for Java.
 
+For Node, also forces every non-private `packages/*/package.json` to the
+same version as root — lockstep monorepo versioning, not independent
+per-package versions. A no-op when there's no `packages/` directory.
+
 On `main`, the version must be strictly greater than the closest existing
 release tag reachable from HEAD. On `develop`, a hardcoded per-language
 dev suffix is appended to the applied version — `-SNAPSHOT` for Java,
@@ -405,10 +409,14 @@ tarball (`publish-command`, default `npm publish`). The proposed next
 develop version gets `-dev` appended (Node's hardcoded dev suffix,
 mirroring Java's `-SNAPSHOT`), e.g. `1.2.0-dev`.
 
-**Root `package.json` only for now** — this doesn't address a monorepo's
-child packages, which was a deliberate deferral, not an oversight (no
-Changesets; child-package versioning via `set-version` is a later
-problem).
+**Monorepo child packages get the root version in lockstep.** `set-version`
+writes the release version into root `package.json`, then forces every
+non-private package under `packages/*` to that same version — not
+independent per-package versions (no Changesets). Internal `@scope/*`
+dependency ranges are assumed to already be `workspace:*`/range, not
+exact-pinned, so no dependency-string rewriting happens, only each
+package's own `version` field. Packages outside `packages/`, or marked
+`"private": true`, are left alone.
 
 ```yaml
 # .github/workflows/release.yml, in the consuming repo

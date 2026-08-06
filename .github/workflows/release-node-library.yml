@@ -28,8 +28,15 @@ name: release-node-library
 # convention, mirroring Java's -SNAPSHOT), so the proposed next develop
 # version comes back from set-version as e.g. 1.2.0-dev.
 #
-# Root package.json only for now — this doesn't handle a monorepo's child
-# packages (deliberately deferred).
+# set-version writes the release version into root package.json, then
+# forces every non-private package under packages/ to the same version —
+# lockstep, not independent (see update-package-json.sh and
+# build-test-node-library.yml's header comment for why: an earlier
+# release workflow broke production by versioning workspace packages
+# independently). Internal @scope/* dependency ranges are assumed to
+# already be workspace:*/range, not exact-pinned, so no dependency-string
+# rewriting happens here — only each package's own version field.
+# Packages not under packages/, or marked "private": true, are untouched.
 #
 # pull_request's github.ref is the PR's merge ref, not the target branch,
 # and that ref is gone once the PR closes — so every checkout here is
@@ -145,6 +152,12 @@ jobs:
           if [ -f package-lock.json ]; then
             git add package-lock.json
           fi
+          # set-version forces every non-private packages/*/package.json to
+          # this same version (lockstep, see update-package-json.sh) — stage
+          # those too so the release commit actually captures them.
+          for pkg_json in packages/*/package.json; do
+            [ -f "$pkg_json" ] && git add "$pkg_json"
+          done
           git commit -m "release: ${VERSION}"
           tag="${TAG_PREFIX}${VERSION}"
           git tag "$tag"
@@ -193,6 +206,9 @@ jobs:
           if [ -f package-lock.json ]; then
             git add package-lock.json
           fi
+          for pkg_json in packages/*/package.json; do
+            [ -f "$pkg_json" ] && git add "$pkg_json"
+          done
           git commit -m "chore: bump to ${NEXT_VERSION}"
           git push origin "$branch"
           gh pr create \
