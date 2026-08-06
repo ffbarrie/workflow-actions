@@ -1,0 +1,22 @@
+# Place at .github/workflows/release.yml in a Java library repo.
+# Fires automatically when promote.yml's PR merges into main. Also
+# triggerable manually (workflow_dispatch) as a recovery path if the
+# automatic trigger is ever missed — see "Bootstrapping a new repo" in
+# workflow-actions' README for why that can happen the first time this
+# file is added to a repo.
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop')
+    uses: ffbarrie/workflow-actions/.github/workflows/release-java-library.yml@v1
+    secrets:
+      maven-server-ids: github
+      maven-server-usernames: ${{ github.actor }}
+      maven-server-passwords: ${{ secrets.GITHUB_TOKEN }}

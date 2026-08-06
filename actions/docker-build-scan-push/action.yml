@@ -86,23 +86,11 @@ runs:
     - name: Build tag list
       id: tags
       shell: bash
-      run: |
-        set -euo pipefail
-        image="${{ inputs.registry }}/${{ inputs.image-name }}"
-        IFS=',' read -ra TAG_ARR <<< "${{ inputs.tags }}"
-        out=""
-        for t in "${TAG_ARR[@]}"; do
-          # trim leading/trailing whitespace so "v1, latest" (a natural way
-          # to type it) doesn't produce an invalid tag with a stray space
-          t="${t#"${t%%[![:space:]]*}"}"
-          t="${t%"${t##*[![:space:]]}"}"
-          out+="${image}:${t},"
-        done
-        echo "list=${out%,}" >> "$GITHUB_OUTPUT"
-        first="${TAG_ARR[0]}"
-        first="${first#"${first%%[![:space:]]*}"}"
-        first="${first%"${first##*[![:space:]]}"}"
-        echo "first=${image}:${first}" >> "$GITHUB_OUTPUT"
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE_NAME: ${{ inputs.image-name }}
+        TAGS: ${{ inputs.tags }}
+      run: ${{ github.action_path }}/build-tag-list.sh
 
     - name: Build image (no push)
       uses: docker/build-push-action@v7
@@ -136,9 +124,6 @@ runs:
     - name: Push image
       if: inputs.push == 'true'
       shell: bash
-      run: |
-        set -euo pipefail
-        IFS=',' read -ra TAG_ARR <<< "${{ steps.tags.outputs.list }}"
-        for t in "${TAG_ARR[@]}"; do
-          docker push "$t"
-        done
+      env:
+        TAG_LIST: ${{ steps.tags.outputs.list }}
+      run: ${{ github.action_path }}/push-image.sh

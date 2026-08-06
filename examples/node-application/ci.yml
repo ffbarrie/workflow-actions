@@ -1,0 +1,16 @@
+# Place at .github/workflows/ci.yml in a Node application repo.
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  ci:
+    uses: ffbarrie/workflow-actions/.github/workflows/build-test-node-application.yml@v1
+    with:
+      package-manager: pnpm
+      build-image: true
+    secrets: inherit

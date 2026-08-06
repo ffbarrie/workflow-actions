@@ -2,6 +2,10 @@
 
 Reusable GitHub Actions and workflows for Java and Node (Next.js) projects.
 
+Setting up a new repo? [`examples/`](examples) has complete, ready-to-copy
+`.github/workflows/` for all four repo shapes this covers — Java/Node ×
+library/application — rather than assembling one from the snippets below.
+
 ## Actions
 
 ### [setup-java-maven](actions/setup-java-maven)
@@ -121,13 +125,13 @@ jobs:
 
 Read-only: reads the project's current version from its version file —
 `pom.xml` for Java, `package.json` for Node — and reports it as `version`
-(raw, e.g. `1.1.0-SNAPSHOT`), `base-version` (SNAPSHOT suffix stripped,
-e.g. `1.1.0`), and `is-snapshot`. Makes no changes and compares against
-nothing — it's the shared "what does the file currently say" building
-block behind both halves of a release: computing the release version from
-develop's current SNAPSHOT, and re-deriving that same version on `main`
-right after the promote PR merges (which carries the SNAPSHOT-suffixed
-value over as-is).
+(raw, e.g. `1.1.0-SNAPSHOT` or `1.1.0-dev`), `base-version` (dev suffix
+stripped, e.g. `1.1.0`), and `is-snapshot`. Makes no changes and compares
+against nothing — it's the shared "what does the file currently say"
+building block behind both halves of a release: computing the release
+version from develop's current dev version, and re-deriving that same
+version on `main` right after the promote PR merges (which carries the
+dev-suffixed value over as-is).
 
 Same assumptions as `set-version`: no checkout of its own, and language
 tooling already set up by a prior step.
@@ -149,17 +153,17 @@ layout — `app.build` is a UTC build timestamp, `yyyy-MM-ddTHH:mm:ssZ`,
 matching the existing PowerShell release scripts' convention) for Java.
 
 On `main`, the version must be strictly greater than the closest existing
-release tag reachable from HEAD. On `develop` with `language: java`
-specifically, `-SNAPSHOT` is appended to the applied version and the
-comparison relaxes to greater-than-or-*equal* — right after a release
-resync, `develop` legitimately holds the just-tagged version as a bare
-number (tag `v1.1.0`, file says `1.1.0`), and the next snapshot based on
-that same number (`1.1.0-SNAPSHOT`) is exactly what continues development.
-Node has no SNAPSHOT concept and is unaffected. Other branches skip the
-tag comparison entirely but still validate the version's format.
+release tag reachable from HEAD. On `develop`, a hardcoded per-language
+dev suffix is appended to the applied version — `-SNAPSHOT` for Java,
+`-dev` for Node — and the comparison relaxes to greater-than-or-*equal*
+— right after a release resync, `develop` legitimately holds the
+just-tagged version as a bare number (tag `v1.1.0`, file says `1.1.0`),
+and the next dev version based on that same number (`1.1.0-SNAPSHOT` or
+`1.1.0-dev`) is exactly what continues development. Other branches skip
+the tag comparison entirely but still validate the version's format.
 
 Returns `success`, `error-message`, and `validated-version` (the version
-actually applied, including any `-SNAPSHOT` suffix) as outputs — the step
+actually applied, including any dev suffix) as outputs — the step
 also fails (non-zero exit) on invalid input, so add `if: always()` on any
 later step that needs to read the outputs after a failure.
 
@@ -253,8 +257,8 @@ otherwise evaluate the merged/head-ref checks as false.
 ### [promote-to-main.yml](.github/workflows/promote-to-main.yml)
 
 Reusable workflow, not a composite action — it's the first half of a
-release: computes the release version from `develop`'s current SNAPSHOT
-(via `get-version`) and opens the `develop` → `main` promote PR. It
+release: computes the release version from `develop`'s current dev
+version (via `get-version`) and opens the `develop` → `main` promote PR. It
 doesn't build, test, publish, commit, or tag anything; the actual release
 work happens on `main`, triggered by that PR's merge, which re-derives
 the same version independently rather than trusting anything carried over
@@ -263,10 +267,14 @@ from this run.
 It has no trigger of its own — the calling repo needs a thin
 `workflow_dispatch` wrapper so a human explicitly kicks off a release from
 `develop`, rather than this firing automatically on every push. Fails
-loudly if triggered from any branch other than `develop`.
+loudly if triggered from any branch other than `develop`. Deliberately a
+*separate* file from the release wrapper below (`promote.yml`, not
+`release.yml`) — combining them would mean two `on:`/`jobs:` blocks
+colliding in one file, since the release wrapper's own `workflow_dispatch`
+means something different (a recovery path, not "start a new release").
 
 ```yaml
-# .github/workflows/release.yml, in the consuming repo
+# .github/workflows/promote.yml, in the consuming repo
 on:
   workflow_dispatch:
 
@@ -361,10 +369,9 @@ jobs:
 Same shape as the Java release workflows — runs on `main` after
 `promote-to-main.yml`'s PR merges, re-derives the release version, tags
 the release the same tag-only way — but for Node libraries publishing a
-tarball (`publish-command`, default `npm publish`). Node has no SNAPSHOT
-convention, so unlike the Java workflows the proposed next develop
-version is a plain number, no suffix, applied the same way the release
-version is.
+tarball (`publish-command`, default `npm publish`). The proposed next
+develop version gets `-dev` appended (Node's hardcoded dev suffix,
+mirroring Java's `-SNAPSHOT`), e.g. `1.2.0-dev`.
 
 **Root `package.json` only for now** — this doesn't address a monorepo's
 child packages, which was a deliberate deferral, not an oversight (no
@@ -395,9 +402,8 @@ the release the same tag-only way, and proposes the next develop version
 — but for Node applications that ship as a container. Builds
 (`build-command`, default `npm run build`) and then builds/scans/pushes
 the image via `docker-build-scan-push`, tagged with both the release
-version and `latest`. Node has no SNAPSHOT convention, so the proposed
-next develop version is a plain number, no suffix, same as
-`release-node-library.yml`.
+version and `latest`. The proposed next develop version gets `-dev`
+appended, same as `release-node-library.yml`.
 
 `docker-build-scan-push`'s own checkout is disabled here too, for the
 same `pull_request` ref-pinning reason as everywhere else in this
@@ -474,3 +480,63 @@ jobs:
       package-manager: pnpm
     secrets: inherit
 ```
+
+## Validating this repo itself
+
+Unlike every other workflow above, [`self-ci.yml`](.github/workflows/self-ci.yml)
+isn't reusable — it's this repo's own CI, running on every push/PR to
+`develop`/`main`. It automates checks that were previously done by hand,
+ad hoc, during development, so a regression gets caught on the next PR
+instead of the next real-world integration:
+
+- `scripts/validate-yaml.rb` — every `action.yml` and workflow file parses as YAML
+- [`actionlint`](https://github.com/rhysd/actionlint) — GitHub Actions semantics for `.github/workflows/*.yml`, including its own shellcheck pass on `run:` steps there
+- `scripts/shellcheck-actions.sh` — shellchecks every composite action's script files directly, since actionlint's schema doesn't understand `action.yml` and gives those zero coverage otherwise
+
+Run any of these locally the same way CI does:
+
+```bash
+ruby scripts/validate-yaml.rb
+actionlint                          # requires actionlint on PATH
+bash scripts/shellcheck-actions.sh  # requires shellcheck on PATH
+```
+
+Every composite action's logic lives in real `.sh` files alongside its
+`action.yml` (e.g. `actions/set-version/validate-version.sh`), invoked via
+`run: ${{ github.action_path }}/script-name.sh` rather than embedded
+inline — a standard pattern for composite actions with real logic, and
+what makes `shellcheck-actions.sh` able to check actual files instead of
+text extracted out of YAML. It's also what makes that logic unit-testable
+at all; see [Testing the core logic](#testing-the-core-logic).
+
+`shellcheck-actions.sh` gates on `--severity=warning` — info/style
+findings are suppressed rather than shown, since they're not worth
+blocking a build over. A genuinely new `error`/`warning` finding still
+fails it.
+
+### Testing the core logic
+
+[`tests/`](tests) holds a [bats-core](https://github.com/bats-core/bats-core)
+suite covering the highest-value, most bug-prone scripts — mainly
+`set-version`'s comparison/dev-suffix rules, `get-version`'s suffix
+stripping, `docker-build-scan-push`'s tag-list construction, and
+`setup-java-maven`'s server-list validation. It mirrors `actions/`'s
+structure (`tests/set-version/validate-version.bats` tests
+`actions/set-version/validate-version.sh`, and so on) and persists what
+was, until this point in the repo's history, only ever manual, ad hoc
+verification run by hand during development — every case in this suite
+was checked at least once that way before being written down here.
+
+```bash
+bats -r tests/                                    # requires bats-core on PATH
+bats tests/set-version/validate-version.bats       # a single file
+```
+
+Each `.bats` file invokes its target script directly (`bash
+actions/X/script.sh`, with inputs set via environment variables the same
+way the composite action's own `env:` block would) rather than going
+through an actual GitHub Actions run — fast, and no network/runner
+dependency, at the cost of not exercising the actual `${{ github.action_path }}`
+invocation mechanism itself. That one detail is only verifiable by an
+actual run on GitHub Actions, same as everything else in this repo that
+depends on real GitHub Actions runtime behavior.

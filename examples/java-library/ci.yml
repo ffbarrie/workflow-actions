@@ -1,0 +1,13 @@
+# Place at .github/workflows/ci.yml in a Java library repo.
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  ci:
+    uses: ffbarrie/workflow-actions/.github/workflows/build-test-java.yml@v1
+    secrets: inherit

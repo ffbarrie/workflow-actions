@@ -1,0 +1,62 @@
+name: self-ci
+
+# Validates this repo's own action.yml, .github/workflows/*.yml, and
+# examples/*/*.yml files on every push/PR — YAML validity, actionlint
+# (GitHub Actions semantics, plus its own shellcheck pass on workflow
+# run: steps), a supplementary shellcheck pass on composite actions'
+# script files (actionlint's schema doesn't understand action.yml, so
+# those get no coverage from it otherwise — see
+# scripts/shellcheck-actions.sh), and a bats-core test suite covering the
+# core logic of each action's scripts (tests/).
+#
+# This automates checks that were previously done by hand, ad hoc, during
+# development. Nothing here is new logic — it's persisting and enforcing
+# checks that already existed only as one-off terminal commands, so a
+# regression gets caught on the next PR instead of the next real-world
+# integration.
+#
+# Unlike every other workflow in this repo, this one is not reusable —
+# it's this repo's own CI, triggered directly.
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate YAML
+        shell: bash
+        run: ruby scripts/validate-yaml.rb
+
+      - name: Download actionlint
+        shell: bash
+        run: bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+
+      - name: Run actionlint
+        shell: bash
+        run: ./actionlint -color .github/workflows/*.yml examples/*/*.yml
+
+      - name: Shellcheck composite actions
+        shell: bash
+        run: bash scripts/shellcheck-actions.sh
+
+      - name: Install bats-core
+        shell: bash
+        # sudo: GitHub-hosted runners' default npm global prefix isn't
+        # writable by the unprivileged runner user (confirmed via a real
+        # CI failure: EACCES on /usr/local/share/man/man7).
+        run: sudo npm install -g bats
+
+      - name: Run bats tests
+        shell: bash
+        run: bats -r tests/

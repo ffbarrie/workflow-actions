@@ -103,21 +103,12 @@ runs:
       shell: bash
       env:
         NPMRC: ${{ inputs.npmrc }}
-      run: printf '%s' "$NPMRC" > ~/.npmrc
+      run: ${{ github.action_path }}/write-npmrc.sh
 
     - name: Install dependencies
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
         INSTALL_COMMAND: ${{ inputs.install-command }}
-      run: |
-        if [ -n "$INSTALL_COMMAND" ]; then
-          eval "$INSTALL_COMMAND"
-        else
-          case "${{ inputs.package-manager }}" in
-            npm)  npm ci ;;
-            pnpm) pnpm install --frozen-lockfile ;;
-            yarn) yarn install --immutable ;;
-            *) echo "::error::Unknown package-manager: ${{ inputs.package-manager }}" >&2; exit 1 ;;
-          esac
-        fi
+        PACKAGE_MANAGER: ${{ inputs.package-manager }}
+      run: ${{ github.action_path }}/install-dependencies.sh

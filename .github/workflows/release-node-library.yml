@@ -24,9 +24,9 @@ name: release-node-library
 # develop, for a human to edit before merging if a different bump is
 # wanted.
 #
-# Node has no SNAPSHOT convention (that's Java-specific), so unlike the
-# Java release workflows, the proposed next version is a plain number —
-# no suffix — applied the same way a release version is.
+# Node's dev suffix is -dev (set-version's hardcoded per-language
+# convention, mirroring Java's -SNAPSHOT), so the proposed next develop
+# version comes back from set-version as e.g. 1.2.0-dev.
 #
 # Root package.json only for now — this doesn't handle a monorepo's child
 # packages (deliberately deferred).
@@ -141,7 +141,10 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json; [ -f package-lock.json ] && git add package-lock.json || true
+          git add package.json
+          if [ -f package-lock.json ]; then
+            git add package-lock.json
+          fi
           git commit -m "release: ${VERSION}"
           tag="${TAG_PREFIX}${VERSION}"
           git tag "$tag"
@@ -175,6 +178,7 @@ jobs:
           version: ${{ steps.next.outputs.version }}
           working-directory: ${{ inputs.working-directory }}
           tag-prefix: ${{ inputs.tag-prefix }}
+          branch: develop
 
       - name: Commit and open sync-back PR
         shell: bash
@@ -185,7 +189,10 @@ jobs:
         run: |
           set -euo pipefail
           branch=$(git rev-parse --abbrev-ref HEAD)
-          git add package.json; [ -f package-lock.json ] && git add package-lock.json || true
+          git add package.json
+          if [ -f package-lock.json ]; then
+            git add package-lock.json
+          fi
           git commit -m "chore: bump to ${NEXT_VERSION}"
           git push origin "$branch"
           gh pr create \

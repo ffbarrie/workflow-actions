@@ -152,7 +152,18 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pom.xml '**/pom.xml'
+          git add pom.xml
+          # git add pom.xml '**/pom.xml' fails outright in a single-module
+          # repo — ** isn't shell-expanded without bash 4's globstar (which
+          # this repo avoids relying on, for portability to macOS runners'
+          # bash 3.2), so git treats it as a literal, non-matching pathspec
+          # and aborts the whole `git add` — including the valid pom.xml
+          # argument alongside it — which silently killed every step after
+          # it under set -e. find handles both single- and multi-module
+          # repos without relying on shell glob features at all.
+          while IFS= read -r -d '' f; do
+            git add "$f"
+          done < <(find . -mindepth 2 -name pom.xml -not -path '*/target/*' -print0)
           git commit -m "release: ${VERSION}"
           tag="${TAG_PREFIX}${VERSION}"
           git tag "$tag"
@@ -197,7 +208,18 @@ jobs:
         run: |
           set -euo pipefail
           branch=$(git rev-parse --abbrev-ref HEAD)
-          git add pom.xml '**/pom.xml'
+          git add pom.xml
+          # git add pom.xml '**/pom.xml' fails outright in a single-module
+          # repo — ** isn't shell-expanded without bash 4's globstar (which
+          # this repo avoids relying on, for portability to macOS runners'
+          # bash 3.2), so git treats it as a literal, non-matching pathspec
+          # and aborts the whole `git add` — including the valid pom.xml
+          # argument alongside it — which silently killed every step after
+          # it under set -e. find handles both single- and multi-module
+          # repos without relying on shell glob features at all.
+          while IFS= read -r -d '' f; do
+            git add "$f"
+          done < <(find . -mindepth 2 -name pom.xml -not -path '*/target/*' -print0)
           git commit -m "chore: bump to ${NEXT_VERSION}"
           git push origin "$branch"
           gh pr create \
