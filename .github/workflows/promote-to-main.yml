@@ -11,6 +11,24 @@ name: promote-to-main
 # or tag anything — the actual release work happens on main, triggered by
 # this PR's merge (see release-*.yml), which re-derives the same version
 # via get-version rather than trusting anything carried over from here.
+#
+# Refuses to promote unless develop's version is a SNAPSHOT (java) or
+# -dev (node) version. A bare release version on develop (e.g. someone
+# hand-committed "1.0.0" instead of "1.0.1-SNAPSHOT") isn't caught here
+# by accident — real-world incident: it promoted fine, but on main the
+# release-*.yml commit step found nothing to stage (the version was
+# already correct) and, before that step was hardened to tolerate a
+# no-op, hard-failed with no tag, no image follow-through, and no
+# develop sync-back PR ever proposed. Failing fast here, with a clear
+# reason, beats a confusing no-op three steps and one PR merge later.
+#
+# This check has no override input by design. If develop's version
+# genuinely needs to be promoted as-is (bare, non-SNAPSHOT/-dev), open
+# the develop -> main PR by hand instead of dispatching this workflow —
+# e.g. `gh pr create --base main --head develop --title "Promote
+# develop into main for version X"`. Merging it still triggers
+# release-*.yml exactly the same way: that trigger only checks the
+# merged PR's head ref, not who or what opened it.
 
 on:
   workflow_call:
@@ -70,6 +88,21 @@ jobs:
         with:
           language: ${{ inputs.language }}
           working-directory: ${{ inputs.working-directory }}
+
+      - name: Require a SNAPSHOT/-dev version on develop
+        shell: bash
+        env:
+          LANGUAGE: ${{ inputs.language }}
+          VERSION: ${{ steps.current.outputs.version }}
+          IS_SNAPSHOT: ${{ steps.current.outputs.is-snapshot }}
+        run: |
+          set -euo pipefail
+          if [ "$IS_SNAPSHOT" != "true" ]; then
+            suffix="-SNAPSHOT"
+            [ "$LANGUAGE" = "node" ] && suffix="-dev"
+            echo "::error::develop's version is '${VERSION}', not a ${suffix} version. Promoting a bare release version leaves release-*.yml with nothing to commit on main and no develop sync-back PR. Fix develop's version file to end in ${suffix}, or if a bare version genuinely needs promoting, open the develop -> main PR by hand instead of this workflow (see this file's header comment)."
+            exit 1
+          fi
 
       - name: Open promote PR
         env:
