@@ -293,6 +293,18 @@ loudly if triggered from any branch other than `develop`. Deliberately a
 colliding in one file, since the release wrapper's own `workflow_dispatch`
 means something different (a recovery path, not "start a new release").
 
+Also fails loudly if `develop`'s version isn't a SNAPSHOT (Java) or
+`-dev` (Node) version. A bare release version on `develop` (e.g.
+hand-committed `1.0.0` instead of `1.0.1-SNAPSHOT`) would otherwise
+promote fine, then leave the release workflow on `main` with nothing to
+commit — no tag, no develop sync-back PR, discovered only after the
+fact. This check has no override input by design: if a bare version
+genuinely needs promoting, open the `develop` → `main` PR by hand
+instead of dispatching this workflow (e.g. `gh pr create --base main
+--head develop --title "Promote develop into main for version X"`) —
+merging it still triggers the release workflow the same way, since that
+trigger only checks the merged PR's head ref, not who or what opened it.
+
 ```yaml
 # .github/workflows/promote.yml, in the consuming repo
 on:
