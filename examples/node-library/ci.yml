@@ -1,0 +1,15 @@
+# Place at .github/workflows/ci.yml in a Node library repo (monorepo-aware).
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  ci:
+    uses: ffbarrie/workflow-actions/.github/workflows/build-test-node-library.yml@v1
+    with:
+      package-manager: pnpm
+    secrets: inherit

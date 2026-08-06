@@ -1,0 +1,24 @@
+# Place at .github/workflows/release.yml in a Node application repo.
+# Fires automatically when promote.yml's PR merges into main. Also
+# triggerable manually (workflow_dispatch) as a recovery path if the
+# automatic trigger is ever missed — see "Bootstrapping a new repo" in
+# workflow-actions' README for why that can happen the first time this
+# file is added to a repo.
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop')
+    uses: ffbarrie/workflow-actions/.github/workflows/release-node-application.yml@v1
+    with:
+      image-name: my-app
+      registry: registry.internal.example.com
+    secrets:
+      registry-username: ${{ secrets.NEXUS_USERNAME }}
+      registry-password: ${{ secrets.NEXUS_PASSWORD }}

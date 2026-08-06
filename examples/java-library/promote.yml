@@ -1,0 +1,12 @@
+# Place at .github/workflows/promote.yml in a Java library repo.
+# Triggered manually so a human decides exactly when a release starts.
+name: Promote
+
+on:
+  workflow_dispatch:
+
+jobs:
+  promote:
+    uses: ffbarrie/workflow-actions/.github/workflows/promote-to-main.yml@v1
+    with:
+      language: java

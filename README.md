@@ -2,6 +2,10 @@
 
 Reusable GitHub Actions and workflows for Java and Node (Next.js) projects.
 
+Setting up a new repo? [`examples/`](examples) has complete, ready-to-copy
+`.github/workflows/` for all four repo shapes this covers — Java/Node ×
+library/application — rather than assembling one from the snippets below.
+
 ## Actions
 
 ### [setup-java-maven](actions/setup-java-maven)
@@ -263,10 +267,14 @@ from this run.
 It has no trigger of its own — the calling repo needs a thin
 `workflow_dispatch` wrapper so a human explicitly kicks off a release from
 `develop`, rather than this firing automatically on every push. Fails
-loudly if triggered from any branch other than `develop`.
+loudly if triggered from any branch other than `develop`. Deliberately a
+*separate* file from the release wrapper below (`promote.yml`, not
+`release.yml`) — combining them would mean two `on:`/`jobs:` blocks
+colliding in one file, since the release wrapper's own `workflow_dispatch`
+means something different (a recovery path, not "start a new release").
 
 ```yaml
-# .github/workflows/release.yml, in the consuming repo
+# .github/workflows/promote.yml, in the consuming repo
 on:
   workflow_dispatch:
 
