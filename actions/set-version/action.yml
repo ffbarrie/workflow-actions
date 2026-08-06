@@ -1,8 +1,10 @@
 name: set-version
 description: >
   Validates a human-entered version and writes it into the project's
-  version file(s) — package.json for Node, pom.xml (and optionally
-  application-release.yaml) for Java. On main, the version must be
+  version file(s) — package.json for Node (plus, in lockstep, every
+  non-private packages/*/package.json — a no-op without a packages/
+  directory), pom.xml (and optionally application-release.yaml) for
+  Java. On main, the version must be
   strictly greater than the closest existing release tag reachable from
   HEAD (git describe --tags --abbrev=0, matching tag-prefix). On develop,
   a hardcoded per-language dev suffix is appended to the applied version
