@@ -2,10 +2,11 @@ name: self-ci
 
 # Validates this repo's own action.yml and .github/workflows/*.yml files
 # on every push/PR — YAML validity, actionlint (GitHub Actions semantics,
-# plus its own shellcheck pass on workflow run: steps), and a
-# supplementary shellcheck pass on composite actions' embedded scripts
-# (actionlint's schema doesn't understand action.yml, so those get no
-# coverage from it otherwise — see scripts/shellcheck-actions.sh).
+# plus its own shellcheck pass on workflow run: steps), a supplementary
+# shellcheck pass on composite actions' script files (actionlint's schema
+# doesn't understand action.yml, so those get no coverage from it
+# otherwise — see scripts/shellcheck-actions.sh), and a bats-core test
+# suite covering the core logic of each action's scripts (tests/).
 #
 # This automates checks that were previously done by hand, ad hoc, during
 # development. Nothing here is new logic — it's persisting and enforcing
@@ -47,3 +48,11 @@ jobs:
       - name: Shellcheck composite actions
         shell: bash
         run: bash scripts/shellcheck-actions.sh
+
+      - name: Install bats-core
+        shell: bash
+        run: npm install -g bats
+
+      - name: Run bats tests
+        shell: bash
+        run: bats -r tests/
