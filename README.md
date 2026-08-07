@@ -60,7 +60,12 @@ checked the repo out — see
 [Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
 `fetch-depth` (default `1`, passed straight through to `actions/checkout`)
 only needs to be `0` when a later step needs full tag history — e.g.
-[set-version](#set-version)'s closest-tag comparison.
+[set-version](#set-version)'s closest-tag comparison. `checkout-path`
+(empty by default, checkout at `$GITHUB_WORKSPACE` root as before) checks
+the repo out into a named subdirectory instead — distinct from
+`working-directory` (which subdirectory holds the manifest to install);
+set this when the repo itself needs to land next to another repo checked
+out alongside it, e.g. via [checkout-sibling](#checkout-sibling).
 
 ```yaml
 jobs:
@@ -75,6 +80,38 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm build
+```
+
+### [checkout-sibling](actions/checkout-sibling)
+
+Checks out another repo into a directory alongside the primary checkout
+(both relative to `$GITHUB_WORKSPACE`) — for consumer apps whose
+`file:../other-repo/...` dependencies expect a sibling repo present on
+disk, the same layout tools like `deps-pin-from-siblings.mjs` /
+`deps-unpin-to-file.mjs` expect locally. See
+[release-node-application.yml](#release-node-applicationyml)'s
+`sibling-repo` input for the full pin/unpin lifecycle this exists to
+support.
+
+Requires a `token` with read access to the sibling repo — `GITHUB_TOKEN`
+is scoped only to the repo the workflow is running in, even within the
+same org, so it can't check out a sibling on its own. Pass a PAT or
+GitHub App installation token instead.
+
+`ref` left empty (the default) resolves to the sibling's **latest tag**,
+not its default branch HEAD — deliberately. This repo's own
+`release-*.yml` workflows never push the release commit to `main`
+itself, only to the tag it points to (`main` stays branch-protected), so
+`main`'s HEAD can be a stale/dev-suffixed version even right after a
+real release. The latest tag is the only ref guaranteed to hold a fully
+released version.
+
+```yaml
+- uses: ffbarrie/workflow-actions/actions/checkout-sibling@v1
+  with:
+    repository: my-org/my-library
+    path: my-library
+    token: ${{ secrets.SIBLING_CHECKOUT_TOKEN }}
 ```
 
 ### [docker-build-scan-push](actions/docker-build-scan-push)
@@ -451,6 +488,18 @@ workflow, and also because its default `git clean` would otherwise wipe
 out the build output the build step just produced — see
 [Chaining multiple actions in one job](#chaining-multiple-actions-in-one-job).
 
+**`sibling-repo`**: for consumer apps whose `file:../other-repo/...`
+dependencies expect a sibling repo present on disk on `develop`, for
+developer convenience. When set, this workflow [checks out that sibling
+at its latest tag](#checkout-sibling) (not `main` — see that section for
+why), runs `pin-command` (default `npm run deps:pin`) before the build
+so the release commit carries real semver instead of `file:` links, and
+runs `unpin-command` (default `npm run deps:unpin`) on the develop
+sync-back branch so `develop` goes back to `file:` links afterward. Set
+`checkout-path` (and `working-directory` to match) to a subdirectory
+name so this repo lands as a true sibling of `sibling-path` on disk —
+both empty (the default) skip all of this and behave exactly as before.
+
 ```yaml
 # .github/workflows/release.yml, in the consuming repo
 on:
@@ -466,9 +515,14 @@ jobs:
     with:
       image-name: my-app
       registry: registry.internal.example.com
+      checkout-path: my-app
+      working-directory: my-app
+      sibling-repo: my-org/my-library
+      sibling-path: my-library
     secrets:
       registry-username: ${{ secrets.NEXUS_USERNAME }}
       registry-password: ${{ secrets.NEXUS_PASSWORD }}
+      sibling-token: ${{ secrets.SIBLING_CHECKOUT_TOKEN }}
 ```
 
 ### [build-test-java.yml](.github/workflows/build-test-java.yml)
@@ -505,6 +559,13 @@ single-package commands and adds the same `build-image` Dockerfile
 validation opt-in as `build-test-java.yml`. Set `lint-command: ""` to
 skip linting.
 
+`build-test-node-application.yml` also takes the same `sibling-repo`
+input as [release-node-application.yml](#release-node-applicationyml),
+for consumer apps whose `file:../other-repo/...` deps expect a sibling
+repo on disk. Here `sibling-ref` defaults to `develop` rather than the
+release workflow's latest-tag default — CI on `develop` should test
+against the sibling's current in-progress code, not its last release.
+
 ```yaml
 # .github/workflows/ci.yml, in the consuming repo
 on:
@@ -518,7 +579,12 @@ jobs:
     uses: ffbarrie/workflow-actions/.github/workflows/build-test-node-application.yml@v1
     with:
       package-manager: pnpm
-    secrets: inherit
+      checkout-path: my-app
+      working-directory: my-app
+      sibling-repo: my-org/my-library
+      sibling-path: my-library
+    secrets:
+      sibling-token: ${{ secrets.SIBLING_CHECKOUT_TOKEN }}
 ```
 
 ## Validating this repo itself
