@@ -158,7 +158,16 @@ jobs:
           for pkg_json in packages/*/package.json; do
             [ -f "$pkg_json" ] && git add "$pkg_json"
           done
-          git commit -m "release: ${VERSION}"
+          # If package.json (and every packages/*/package.json) is
+          # already at $VERSION, set-version above was a no-op and
+          # there's nothing staged. Not an error — the release commit
+          # for this version already exists (or was never needed); tag
+          # whatever HEAD already is.
+          if git diff --cached --quiet; then
+            echo "package.json already at ${VERSION}; nothing to commit, tagging HEAD as-is."
+          else
+            git commit -m "release: ${VERSION}"
+          fi
           tag="${TAG_PREFIX}${VERSION}"
           git tag "$tag"
           # Only the tag is pushed — never main itself, which is
@@ -209,7 +218,14 @@ jobs:
           for pkg_json in packages/*/package.json; do
             [ -f "$pkg_json" ] && git add "$pkg_json"
           done
-          git commit -m "chore: bump to ${NEXT_VERSION}"
+          # Same no-op guard as the "Commit and tag release" step: if
+          # $NEXT_VERSION happens to match what's already on this branch,
+          # there's nothing staged and git commit would fail under set -e.
+          if git diff --cached --quiet; then
+            echo "package.json already at ${NEXT_VERSION}; nothing to commit."
+          else
+            git commit -m "chore: bump to ${NEXT_VERSION}"
+          fi
           git push origin "$branch"
           gh pr create \
             --base develop \
