@@ -19,6 +19,21 @@ name: build-test-node-application
 # monorepo-vs-single. build-image is an opt-in validation-only docker
 # build (no push) to catch Dockerfile problems in CI rather than at
 # release.
+#
+# sibling-repo is for consumer apps whose file:../other-repo/...
+# dependencies expect a sibling repo present on disk (see
+# checkout-sibling's own description for the full rationale) — e.g. an
+# app depending on an unpublished-on-develop sibling library via file:
+# links for developer convenience. Left empty (the default), nothing
+# changes: no sibling checkout happens, and checkout-path defaults to
+# checking out this repo at $GITHUB_WORKSPACE root exactly as before.
+# When sibling-repo is set, checkout-path and working-directory should
+# both be set to this repo's own subdirectory name, so it ends up a true
+# OS-level sibling of the checked-out dependency on the runner's disk —
+# sibling-ref defaults to "develop", matching local dev parity (CI tests
+# against the sibling's current in-progress code, not its latest
+# release; contrast release-node-application.yml, which needs the
+# opposite default for the release-time pin step).
 
 on:
   workflow_call:
@@ -35,6 +50,16 @@ on:
         type: string
         required: false
         default: "."
+      checkout-path:
+        description: >
+          Directory, relative to $GITHUB_WORKSPACE, to check this repo
+          out into. Empty (default) checks out at $GITHUB_WORKSPACE root
+          as before. Set this (and working-directory) to a subdirectory
+          name when using sibling-repo, so this repo ends up a true
+          sibling of the checked-out dependency on disk.
+        type: string
+        required: false
+        default: ""
       registry-url:
         type: string
         required: false
@@ -71,6 +96,24 @@ on:
         type: string
         required: false
         default: Dockerfile
+      sibling-repo:
+        description: >
+          owner/repo of a sibling dependency to check out before install
+          (e.g. a library this app depends on via file:../ links on
+          develop). Empty (default) skips sibling checkout entirely.
+        type: string
+        required: false
+        default: ""
+      sibling-path:
+        description: Directory, relative to $GITHUB_WORKSPACE, to check the sibling out into. Required when sibling-repo is set.
+        type: string
+        required: false
+        default: ""
+      sibling-ref:
+        description: Ref of the sibling to check out. Defaults to develop, matching local dev parity.
+        type: string
+        required: false
+        default: develop
       runs-on:
         type: string
         required: false
@@ -80,6 +123,9 @@ on:
         description: Auth token for the install registry, if registry-url is set
         required: false
       npmrc:
+        required: false
+      sibling-token:
+        description: Token with read access to sibling-repo (a PAT or GitHub App token). Required when sibling-repo is set.
         required: false
 
 permissions:
@@ -91,12 +137,29 @@ jobs:
     env:
       NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
     steps:
+      - name: Require checkout-path when using sibling-repo
+        if: inputs.sibling-repo != '' && inputs.checkout-path == ''
+        shell: bash
+        run: |
+          echo "::error::sibling-repo is set but checkout-path is empty — this repo would check out at \$GITHUB_WORKSPACE root while the sibling lands in a subdirectory, so file:../ deps can't resolve. Set checkout-path (and working-directory to match) to a subdirectory name."
+          exit 1
+
+      - name: Checkout sibling
+        if: inputs.sibling-repo != ''
+        uses: ffbarrie/workflow-actions/actions/checkout-sibling@v1
+        with:
+          repository: ${{ inputs.sibling-repo }}
+          path: ${{ inputs.sibling-path }}
+          ref: ${{ inputs.sibling-ref }}
+          token: ${{ secrets.sibling-token }}
+
       - name: Set up Node
         uses: ffbarrie/workflow-actions/actions/setup-node@v1
         with:
           node-version: ${{ inputs.node-version }}
           package-manager: ${{ inputs.package-manager }}
           working-directory: ${{ inputs.working-directory }}
+          checkout-path: ${{ inputs.checkout-path }}
           registry-url: ${{ inputs.registry-url }}
           scope: ${{ inputs.scope }}
           npmrc: ${{ secrets.npmrc }}

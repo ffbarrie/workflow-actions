@@ -38,6 +38,23 @@ name: release-node-application
 # docker-build-scan-push's own checkout is disabled for the same reason,
 # and also because its default git clean would wipe out the build output
 # just produced.
+#
+# sibling-repo is for consumer apps whose file:../other-repo/...
+# dependencies expect a sibling repo present on disk on develop, for
+# developer convenience — this is where those file: refs get pinned to
+# real semver before the release build, and unpinned back to file: on
+# the develop sync-back branch, via pin-command/unpin-command (default
+# npm run deps:pin / deps:unpin — matching the scripts this pattern was
+# ported from). Left empty (the default), none of this runs.
+#
+# Unlike build-test-node-application.yml's sibling-ref (which defaults
+# to develop, for dev parity), this workflow's sibling-ref defaults to
+# empty, which checkout-sibling resolves to the sibling's latest tag —
+# deliberately, not incidentally: this repo's own release-*.yml
+# workflows never push the release commit to main itself, only to the
+# tag it points to, so a sibling's main branch HEAD can be a stale/
+# dev-suffixed version even right after a real release there. Pinning
+# against main would silently pin to the wrong version.
 
 on:
   workflow_call:
@@ -54,6 +71,16 @@ on:
         type: string
         required: false
         default: "."
+      checkout-path:
+        description: >
+          Directory, relative to $GITHUB_WORKSPACE, to check this repo
+          out into. Empty (default) checks out at $GITHUB_WORKSPACE
+          root as before. Set this (and working-directory) to a
+          subdirectory name when using sibling-repo, so this repo ends
+          up a true sibling of the checked-out dependency on disk.
+        type: string
+        required: false
+        default: ""
       tag-prefix:
         type: string
         required: false
@@ -81,6 +108,34 @@ on:
         type: string
         required: false
         default: Dockerfile
+      sibling-repo:
+        description: >
+          owner/repo of a sibling dependency to check out, pin against,
+          and unpin from (e.g. a library this app depends on via
+          file:../ links on develop). Empty (default) skips all of this.
+        type: string
+        required: false
+        default: ""
+      sibling-path:
+        description: Directory, relative to $GITHUB_WORKSPACE, to check the sibling out into. Required when sibling-repo is set.
+        type: string
+        required: false
+        default: ""
+      sibling-ref:
+        description: Ref of the sibling to check out. Empty (default) resolves to its latest tag — see header comment for why.
+        type: string
+        required: false
+        default: ""
+      pin-command:
+        description: "Command that rewrites file: deps on sibling-repo to real semver, using the sibling checkout as its version source"
+        type: string
+        required: false
+        default: npm run deps:pin
+      unpin-command:
+        description: "Command that rewrites sibling-repo deps back to file: links, for the develop sync-back branch"
+        type: string
+        required: false
+        default: npm run deps:unpin
       runs-on:
         type: string
         required: false
@@ -98,6 +153,9 @@ on:
         required: false
       registry-password:
         required: false
+      sibling-token:
+        description: Token with read access to sibling-repo (a PAT or GitHub App token). Required when sibling-repo is set.
+        required: false
 
 permissions:
   contents: write
@@ -110,11 +168,28 @@ jobs:
     env:
       NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
     steps:
+      - name: Require checkout-path when using sibling-repo
+        if: inputs.sibling-repo != '' && inputs.checkout-path == ''
+        shell: bash
+        run: |
+          echo "::error::sibling-repo is set but checkout-path is empty — this repo would check out at \$GITHUB_WORKSPACE root while the sibling lands in a subdirectory, so file:../ deps can't resolve. Set checkout-path (and working-directory to match) to a subdirectory name."
+          exit 1
+
       - name: Checkout main
         uses: actions/checkout@v7
         with:
           ref: main
+          path: ${{ inputs.checkout-path }}
           fetch-depth: 0
+
+      - name: Checkout sibling
+        if: inputs.sibling-repo != ''
+        uses: ffbarrie/workflow-actions/actions/checkout-sibling@v1
+        with:
+          repository: ${{ inputs.sibling-repo }}
+          path: ${{ inputs.sibling-path }}
+          ref: ${{ inputs.sibling-ref }}
+          token: ${{ secrets.sibling-token }}
 
       - name: Set up Node
         uses: ffbarrie/workflow-actions/actions/setup-node@v1
@@ -126,6 +201,14 @@ jobs:
           registry-url: ${{ inputs.registry-url }}
           scope: ${{ inputs.scope }}
           npmrc: ${{ secrets.npmrc }}
+
+      - name: Pin sibling dependencies
+        if: inputs.sibling-repo != ''
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          PIN_COMMAND: ${{ inputs.pin-command }}
+        run: eval "$PIN_COMMAND"
 
       - name: Get current version
         id: current
@@ -202,6 +285,14 @@ jobs:
         env:
           NEXT_VERSION: ${{ steps.next.outputs.version }}
         run: git checkout -b "release/next-version-${NEXT_VERSION}"
+
+      - name: Unpin sibling dependencies
+        if: inputs.sibling-repo != ''
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          UNPIN_COMMAND: ${{ inputs.unpin-command }}
+        run: eval "$UNPIN_COMMAND"
 
       - name: Set next development version
         id: next-version
