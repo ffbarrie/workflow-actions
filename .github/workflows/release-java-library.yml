@@ -138,7 +138,17 @@ jobs:
           while IFS= read -r -d '' f; do
             git add "$f"
           done < <(find . -mindepth 2 -name pom.xml -not -path '*/target/*' -print0)
-          git commit -m "release: ${VERSION}"
+          # If main's pom.xml is already at $VERSION (e.g. promote-to-main
+          # merged a pom.xml that was hand-edited to a non-SNAPSHOT version
+          # instead of the expected X.Y.Z-SNAPSHOT), set-version above is a
+          # no-op and there's nothing staged. That's not an error — it just
+          # means the release commit for this version already exists (or
+          # was never needed); tag whatever HEAD already is.
+          if git diff --cached --quiet; then
+            echo "pom.xml already at ${VERSION}; nothing to commit, tagging HEAD as-is."
+          else
+            git commit -m "release: ${VERSION}"
+          fi
           tag="${TAG_PREFIX}${VERSION}"
           git tag "$tag"
           # Only the tag is pushed — never main itself, which is
@@ -194,7 +204,14 @@ jobs:
           while IFS= read -r -d '' f; do
             git add "$f"
           done < <(find . -mindepth 2 -name pom.xml -not -path '*/target/*' -print0)
-          git commit -m "chore: bump to ${NEXT_VERSION}"
+          # Same no-op guard as the "Commit and tag release" step: if
+          # $NEXT_VERSION happens to match what's already on this branch,
+          # there's nothing staged and git commit would fail under set -e.
+          if git diff --cached --quiet; then
+            echo "pom.xml already at ${NEXT_VERSION}; nothing to commit."
+          else
+            git commit -m "chore: bump to ${NEXT_VERSION}"
+          fi
           git push origin "$branch"
           gh pr create \
             --base develop \
