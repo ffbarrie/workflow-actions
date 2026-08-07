@@ -62,6 +62,18 @@ inputs:
       default git clean wiping out anything built since that checkout.
     required: false
     default: "true"
+  checkout-path:
+    description: >
+      Directory, relative to $GITHUB_WORKSPACE, to check the repo out
+      into. Empty (default) checks out at $GITHUB_WORKSPACE root, same
+      as leaving actions/checkout's own path unset. Distinct from
+      working-directory (which subdirectory of the checkout holds the
+      manifest to install) — set this instead when the repo itself needs
+      to land in a named subdirectory, e.g. to end up a sibling of
+      another repo checked out alongside it on disk. Ignored when
+      checkout is false.
+    required: false
+    default: ""
   fetch-depth:
     description: >
       Passed straight through to actions/checkout's fetch-depth. The
@@ -80,6 +92,7 @@ runs:
       if: inputs.checkout == 'true'
       uses: actions/checkout@v7
       with:
+        path: ${{ inputs.checkout-path }}
         fetch-depth: ${{ inputs.fetch-depth }}
 
     - name: Set up pnpm

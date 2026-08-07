@@ -1,0 +1,69 @@
+name: checkout-sibling
+description: >
+  Checks out another repo into a directory that sits alongside the
+  primary checkout (both relative to $GITHUB_WORKSPACE) — for consumer
+  apps whose file:../other-repo/... dependencies expect a sibling repo
+  present on disk, matching how tools like deps-pin-from-siblings.mjs /
+  deps-unpin-to-file.mjs discover sibling packages locally.
+
+  Requires a token with read access to the sibling repo: GITHUB_TOKEN is
+  scoped only to the repo the workflow is running in, even within the
+  same org, so it cannot check out a sibling repo on its own — pass a
+  PAT or GitHub App installation token instead.
+
+  ref left empty (the default) resolves to the sibling's latest tag
+  (git describe --tags --abbrev=0 from its default branch) rather than
+  its default branch HEAD — deliberately, not incidentally: this repo's
+  own release-*.yml workflows never push the release commit to main
+  itself, only to the tag it points to (main stays branch-protected), so
+  main's HEAD can be a stale/dev-suffixed version even right after a
+  real release. The latest tag is the only ref guaranteed to hold a
+  fully-released version.
+
+inputs:
+  repository:
+    description: owner/repo of the sibling to check out
+    required: true
+  path:
+    description: Directory, relative to $GITHUB_WORKSPACE, to check the sibling out into
+    required: true
+  ref:
+    description: >
+      Ref to check out. Empty (default) resolves to the sibling's latest
+      tag instead of its default branch HEAD — see above for why.
+    required: false
+    default: ""
+  token:
+    description: >
+      Token with read access to the sibling repo — a PAT or GitHub App
+      installation token. GITHUB_TOKEN cannot read other repos, even in
+      the same org.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout sibling at explicit ref
+      if: inputs.ref != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.repository }}
+        ref: ${{ inputs.ref }}
+        path: ${{ inputs.path }}
+        token: ${{ inputs.token }}
+
+    - name: Checkout sibling default branch
+      if: inputs.ref == ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.repository }}
+        path: ${{ inputs.path }}
+        token: ${{ inputs.token }}
+        fetch-depth: 0
+        fetch-tags: true
+
+    - name: Check out sibling's latest tag
+      if: inputs.ref == ''
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      run: ${{ github.action_path }}/checkout-latest-tag.sh
