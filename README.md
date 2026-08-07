@@ -499,6 +499,10 @@ sync-back branch so `develop` goes back to `file:` links afterward. Set
 `checkout-path` (and `working-directory` to match) to a subdirectory
 name so this repo lands as a true sibling of `sibling-path` on disk —
 both empty (the default) skip all of this and behave exactly as before.
+`sibling-build-command` (default `npm ci && npm run build`) runs in the
+sibling's checkout first — `file:` deps copy whatever's currently on
+disk there as-is, so an unbuilt TypeScript/build-step sibling (source
+only, no `dist/`) fails to resolve at this repo's own install time.
 
 ```yaml
 # .github/workflows/release.yml, in the consuming repo
@@ -565,6 +569,10 @@ for consumer apps whose `file:../other-repo/...` deps expect a sibling
 repo on disk. Here `sibling-ref` defaults to `develop` rather than the
 release workflow's latest-tag default — CI on `develop` should test
 against the sibling's current in-progress code, not its last release.
+Same `sibling-build-command` too (default `npm ci && npm run build`,
+run in the sibling's checkout before this repo's own install) — a
+build-step sibling with no `dist/` yet fails `file:` resolution
+otherwise.
 
 ```yaml
 # .github/workflows/ci.yml, in the consuming repo
