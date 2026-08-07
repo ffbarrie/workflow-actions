@@ -104,7 +104,9 @@ not its default branch HEAD — deliberately. This repo's own
 itself, only to the tag it points to (`main` stays branch-protected), so
 `main`'s HEAD can be a stale/dev-suffixed version even right after a
 real release. The latest tag is the only ref guaranteed to hold a fully
-released version.
+released version. When used for the release-time pin step, "always
+resolves to latest" has a real consequence worth reading about — see
+[Node auto-updates a sibling dependency on release; Java doesn't](#node-auto-updates-a-sibling-dependency-on-release-java-doesnt).
 
 ```yaml
 - uses: ffbarrie/workflow-actions/actions/checkout-sibling@v1
@@ -315,6 +317,45 @@ its own. If it becomes real friction, the fix is swapping `github.token`
 for a PAT or GitHub App installation token in that one step, which would
 let the sync-back PR's CI run automatically like any human-created PR.
 
+### Node auto-updates a sibling dependency on release; Java doesn't
+
+A consumer app's release picks up a new version of a sibling dependency
+completely differently depending on language, and this is worth knowing
+up front rather than discovering by surprise:
+
+- **Node** (`release-node-application.yml`'s `sibling-repo`): `pin-command`
+  reads whatever version [checkout-sibling](#checkout-sibling) resolved
+  — the sibling's **latest tag**, by default — and writes it straight
+  into `package.json`. This happens automatically, with no human
+  decision, on **every single release**. Two releases of the exact same
+  app commit, run at two different times, can produce two different
+  images if the library tagged a new release in between — there's no
+  version pin in the app's own git history to make that reproducible,
+  and no changelog review or opt-in gate before the new library version
+  ships. (This is the same shape of risk as `workflow-actions`' own
+  floating `@v1` tag, one layer down — see this repo's own commit
+  history for how many times `@v1` moved during a single working
+  session.)
+- **Java** (Maven `pom.xml` dependencies): there is no equivalent
+  mechanism anywhere in this repo. Picking up a newer library version
+  requires a human to explicitly edit the `<version>` in `pom.xml` on
+  `develop` and commit that change — deliberate, reviewable, and fully
+  reproducible (the exact dependency version is pinned in git history),
+  but also entirely manual: nothing here notices or nudges when a
+  dependency has a newer release available, so it can drift arbitrarily
+  stale with no automatic signal.
+
+Neither behavior is strictly "correct" — automatic-latest trades
+reproducibility and review for zero maintenance burden; manual-pin trades
+zero automatic drift-detection for needing a human to remember. They're
+just different, and currently different **by accident of how each was
+built** (`checkout-sibling` was designed for Node's `file:`-dependency
+convenience-on-`develop` pattern; nothing equivalent has been built for
+Maven). If Java apps end up needing the same "always build against the
+library's latest release" behavior, that would need new, separate work —
+Maven has no `file:`-path dependency concept to mirror, so it'd look
+different in shape, not just a port of `checkout-sibling`.
+
 ### [promote-to-main.yml](.github/workflows/promote-to-main.yml)
 
 Reusable workflow, not a composite action — it's the first half of a
@@ -492,7 +533,10 @@ out the build output the build step just produced — see
 dependencies expect a sibling repo present on disk on `develop`, for
 developer convenience. When set, this workflow [checks out that sibling
 at its latest tag](#checkout-sibling) (not `main` — see that section for
-why), runs `pin-command` (default `npm run deps:pin`) before the build
+why) **automatically, on every release, with no human decision or pin in
+the app's own git history** (see
+[Node auto-updates a sibling dependency on release; Java doesn't](#node-auto-updates-a-sibling-dependency-on-release-java-doesnt)
+if that's surprising), runs `pin-command` (default `npm run deps:pin`) before the build
 so the release commit carries real semver instead of `file:` links, and
 runs `unpin-command` (default `npm run deps:unpin`) on the develop
 sync-back branch so `develop` goes back to `file:` links afterward. Set
