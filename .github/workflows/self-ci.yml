@@ -34,6 +34,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Check executable bits on action scripts
+        shell: bash
+        # A real failure, not a hypothetical: checkout-latest-tag.sh was
+        # committed 100644 instead of 100755 (a Write-tool artifact,
+        # never chmod'd before the original commit) and nothing caught
+        # it until a real release run hit "Permission denied" — bats
+        # invokes scripts via `bash "$SCRIPT"`, which bypasses the
+        # shebang/exec-bit mechanism entirely, so even full bats
+        # coverage wouldn't have caught this class of bug.
+        run: |
+          set -euo pipefail
+          missing=$(find actions -name '*.sh' -not -perm -u+x)
+          if [ -n "$missing" ]; then
+            echo "::error::Missing executable bit on:"
+            echo "$missing"
+            exit 1
+          fi
+
       - name: Validate YAML
         shell: bash
         run: ruby scripts/validate-yaml.rb
