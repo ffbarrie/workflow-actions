@@ -150,14 +150,32 @@ jobs:
             git commit -m "release: ${VERSION}"
           fi
           tag="${TAG_PREFIX}${VERSION}"
-          git tag "$tag"
-          # Only the tag is pushed — never main itself, which is
-          # branch-protected; this commit is reachable solely via the tag.
-          git push origin "$tag"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # If this exact tag already exists, this version was already
+          # fully released (commit, tag, and push all already happened) —
+          # most likely a redundant workflow_dispatch re-run with nothing
+          # new since. git tag would fail outright here (fatal: tag
+          # already exists, exit 128), and continuing past it would try
+          # to bump develop's next-dev version a second time from this
+          # stale point-in-time main, which can conflict with or revert
+          # real work that landed on develop since the real release.
+          # Skip the rest of this job entirely instead — there's nothing
+          # new to do.
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "Tag ${tag} already exists — this version was already fully released; nothing left to do."
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            git tag "$tag"
+            # Only the tag is pushed — never main itself, which is
+            # branch-protected; this commit is reachable solely via the tag.
+            git push origin "$tag"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Compute next development version
         id: next
+        if: steps.tag.outputs.skip != 'true'
         shell: bash
         env:
           RELEASED_VERSION: ${{ steps.release-version.outputs.validated-version }}
@@ -167,6 +185,7 @@ jobs:
           echo "version=${major}.$((minor + 1)).0" >> "$GITHUB_OUTPUT"
 
       - name: Create next-development branch
+        if: steps.tag.outputs.skip != 'true'
         shell: bash
         working-directory: ${{ inputs.working-directory }}
         env:
@@ -175,6 +194,7 @@ jobs:
 
       - name: Set next development SNAPSHOT
         id: next-snapshot
+        if: steps.tag.outputs.skip != 'true'
         uses: ffbarrie/workflow-actions/actions/set-version@v1
         with:
           language: java
@@ -184,6 +204,7 @@ jobs:
           branch: develop
 
       - name: Commit and open sync-back PR
+        if: steps.tag.outputs.skip != 'true'
         shell: bash
         working-directory: ${{ inputs.working-directory }}
         env:
