@@ -47,6 +47,12 @@ name: release-node-application
 # npm run deps:pin / deps:unpin — matching the scripts this pattern was
 # ported from). Left empty (the default), none of this runs.
 #
+# sibling-build-command (default npm ci && npm run build) runs in the
+# sibling's checkout right after it, before this repo's own install —
+# file: deps copy the sibling's current on-disk state as-is, so an
+# unbuilt TypeScript/build-step sibling fails to resolve otherwise (same
+# reasoning as build-test-node-application.yml's own sibling-build-command).
+#
 # Unlike build-test-node-application.yml's sibling-ref (which defaults
 # to develop, for dev parity), this workflow's sibling-ref defaults to
 # empty, which checkout-sibling resolves to the sibling's latest tag —
@@ -126,6 +132,16 @@ on:
         type: string
         required: false
         default: ""
+      sibling-build-command:
+        description: >
+          Command run in sibling-path right after checkout, before this
+          repo's own install. file: deps copy the sibling's current
+          on-disk state as-is, so an unbuilt TypeScript/build-step
+          sibling (source only, no dist/) fails to resolve at install
+          time — set to "" to skip if the sibling needs no build step.
+        type: string
+        required: false
+        default: npm ci && npm run build
       pin-command:
         description: "Command that rewrites file: deps on sibling-repo to real semver, using the sibling checkout as its version source"
         type: string
@@ -190,6 +206,20 @@ jobs:
           path: ${{ inputs.sibling-path }}
           ref: ${{ inputs.sibling-ref }}
           token: ${{ secrets.sibling-token }}
+
+      - name: Set up Node.js for sibling build
+        if: inputs.sibling-repo != '' && inputs.sibling-build-command != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Build sibling
+        if: inputs.sibling-repo != '' && inputs.sibling-build-command != ''
+        shell: bash
+        working-directory: ${{ inputs.sibling-path }}
+        env:
+          SIBLING_BUILD_COMMAND: ${{ inputs.sibling-build-command }}
+        run: eval "$SIBLING_BUILD_COMMAND"
 
       - name: Set up Node
         uses: ffbarrie/workflow-actions/actions/setup-node@v1
