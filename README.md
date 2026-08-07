@@ -603,6 +603,7 @@ isn't reusable — it's this repo's own CI, running on every push/PR to
 ad hoc, during development, so a regression gets caught on the next PR
 instead of the next real-world integration:
 
+- Executable bits on every `actions/**/*.sh` — a real failure, not a hypothetical: `checkout-latest-tag.sh` was committed `100644` instead of `100755` (a Write-tool artifact, never `chmod`'d before the original commit) and nothing caught it until a real release run hit `Permission denied`. bats invokes scripts via `bash "$SCRIPT"`, which bypasses the shebang/exec-bit mechanism entirely — full bats coverage wouldn't have caught this class of bug, so it's checked directly instead.
 - `scripts/validate-yaml.rb` — every `action.yml` and workflow file parses as YAML
 - [`actionlint`](https://github.com/rhysd/actionlint) — GitHub Actions semantics for `.github/workflows/*.yml`, including its own shellcheck pass on `run:` steps there
 - `scripts/shellcheck-actions.sh` — shellchecks every composite action's script files directly, since actionlint's schema doesn't understand `action.yml` and gives those zero coverage otherwise
@@ -631,15 +632,21 @@ fails it.
 ### Testing the core logic
 
 [`tests/`](tests) holds a [bats-core](https://github.com/bats-core/bats-core)
-suite covering the highest-value, most bug-prone scripts — mainly
-`set-version`'s comparison/dev-suffix rules, `get-version`'s suffix
-stripping, `docker-build-scan-push`'s tag-list construction, and
-`setup-java-maven`'s server-list validation. It mirrors `actions/`'s
-structure (`tests/set-version/validate-version.bats` tests
+suite covering the scripts with real logic of their own — `set-version`'s
+comparison/dev-suffix rules and per-language file updates,
+`get-version`'s suffix stripping, `checkout-sibling`'s latest-tag
+resolution, `docker-build-scan-push`'s tag-list construction and push
+loop, `setup-java-maven`'s server-list validation, and `setup-node`'s
+install-command case statement and `.npmrc` writer. It mirrors
+`actions/`'s structure (`tests/set-version/validate-version.bats` tests
 `actions/set-version/validate-version.sh`, and so on) and persists what
 was, until this point in the repo's history, only ever manual, ad hoc
 verification run by hand during development — every case in this suite
 was checked at least once that way before being written down here.
+Two scripts are deliberately left untested — `update-pom-xml.sh` and
+`show-versions.sh` are one-line passthroughs to `mvn`/`java` with no
+branching logic of their own; a test would just be testing Maven, not
+this repo.
 
 ```bash
 bats -r tests/                                    # requires bats-core on PATH
@@ -651,6 +658,8 @@ actions/X/script.sh`, with inputs set via environment variables the same
 way the composite action's own `env:` block would) rather than going
 through an actual GitHub Actions run — fast, and no network/runner
 dependency, at the cost of not exercising the actual `${{ github.action_path }}`
-invocation mechanism itself. That one detail is only verifiable by an
-actual run on GitHub Actions, same as everything else in this repo that
-depends on real GitHub Actions runtime behavior.
+invocation mechanism itself (the self-ci executable-bit check above
+closes one specific instance of that gap — a missing `+x` bit — but not
+the general case). That's only fully verifiable by an actual run on
+GitHub Actions, same as everything else in this repo that depends on
+real GitHub Actions runtime behavior.
