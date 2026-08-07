@@ -112,6 +112,11 @@ runs:
         severity: ${{ inputs.severity }}
         ignore-unfixed: false
         exit-code: ${{ inputs.fail-on-scan-findings == 'true' && '1' || '0' }}
+        # trivy-action@v0.36.0's own default (v0.70.0) — pinned explicitly
+        # so bumping the Trivy CLI itself is a deliberate, visible change
+        # here rather than an implicit drift the next time trivy-action's
+        # own default moves.
+        version: v0.73.0
 
     - name: Log in to registry
       if: inputs.push == 'true' && inputs.skip-registry-login != 'true'
