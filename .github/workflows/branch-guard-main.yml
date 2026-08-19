@@ -1,0 +1,99 @@
+name: branch-guard-main
+
+# Reusable workflow only — no trigger of its own. The calling repo needs
+# its own thin wrapper, typically:
+#
+#   on:
+#     push:
+#       branches: [main]
+#   jobs:
+#     guard:
+#       uses: ffbarrie/workflow-actions/.github/workflows/branch-guard-main.yml@v1
+#       secrets:
+#         chat-webhook: ${{ secrets.GCHAT_WEBHOOK }}
+#
+# After-the-fact detector for a direct push to main (anything that is
+# not a PR merge). GitHub Free private organizations cannot use branch
+# protection / rulesets to hard-block those pushes, so this cannot
+# prevent the commit from landing — it fails the Actions run for
+# visibility and optionally posts to a chat webhook so someone notices.
+#
+# Compatible with this repo's tag-only release model: release-*.yml
+# never pushes a commit to the main branch ref, so a legitimate
+# promote merge is a PR merge (allowed) and a human git push to main
+# is what this catches.
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        type: string
+        required: false
+        default: ubuntu-latest
+    secrets:
+      chat-webhook:
+        description: Optional incoming-webhook URL (e.g. Google Chat). Empty skips notification; the job still fails on a direct push.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  check-direct-push:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Detect direct push to main
+        id: detect
+        shell: bash
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          PUSHER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          if [[ "${COMMIT_MSG}" == Merge\ pull\ request* ]] || [[ "${COMMIT_MSG}" == *"(#"*")"* ]]; then
+            echo "PR merge detected. All good."
+            echo "direct=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "direct=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Direct push to main"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Who** | ${PUSHER} |"
+            echo "| **When** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |"
+            echo "| **Commit** | ${{ github.sha }} |"
+            echo "| **Message** | ${COMMIT_MSG} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify chat webhook
+        if: steps.detect.outputs.direct == 'true'
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.chat-webhook }}
+          PUSHER: ${{ github.actor }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WEBHOOK}" ]; then
+            echo "::warning::chat-webhook secret is not set — skipping chat notification."
+            exit 0
+          fi
+
+          TEXT=$(printf 'Direct push to main detected in *%s*\n*Who:* %s\n*Message:* %s\n*Commit:* %s\n*Run:* %s\n\nThis bypassed PR review. Please revert or open a follow-up PR.' \
+            "${REPO}" "${PUSHER}" "${COMMIT_MSG}" "${COMMIT_URL}" "${RUN_URL}")
+
+          jq -n --arg text "${TEXT}" '{text: $text}' \
+            | curl -sS -X POST "${WEBHOOK}" \
+                -H 'Content-Type: application/json; charset=UTF-8' \
+                -d @-
+
+      - name: Fail the run for visibility
+        if: steps.detect.outputs.direct == 'true'
+        shell: bash
+        run: exit 1

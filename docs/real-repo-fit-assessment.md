@@ -37,7 +37,7 @@ Last pushed 2026-02-21 — over five months stale, versus `soundgen-fintech-clie
 ### foundry-server — distinct model, don't force the application template
 The most mature and most different repo in the set — three real workflows instead of one bare Docker build. `build.yml` runs `mvn package` then `mvn deploy` directly on push to `main`: no Docker image, no version tag, no release commit. That's closer in shape to what `release-java-library.yml` targets than `release-java-application.yml`, despite the repo's name — consistent with its actual description as a shared multi-module Java framework, not a deployed service. It's also triggered by `repository_dispatch: [core-test-updated]`, an external cross-repo signal `workflow-actions` has no equivalent of; that would need to stay a repo-owned addition alongside the shared pattern, not something to fold in.
 
-`branch-guard.yml` is a genuinely distinct governance idea worth the team's attention on its own: rather than hard-blocking direct pushes to `main` via a ruleset, it lets the push through, detects it, and posts a Google Chat alert. That's a real alternative to (or complement of) `workflow-actions`' branch-ruleset approach — worth a deliberate decision, not silently dropped when this repo migrates.
+`branch-guard.yml` is a genuinely distinct governance idea, and a practical one: Foundry is a GitHub Free private organization, so branch protection / rulesets cannot hard-block direct pushes to `main`. The workflow lets the push through, detects it, fails the Actions run for visibility, and optionally posts a Google Chat alert. That's the substitute for a paid-plan ruleset — worth keeping as a shared `branch-guard-main.yml`, not silently dropped when this repo migrates.
 
 One small, concrete data point for the proposal itself: `build.yml` configures `actions/setup-java` with a Maven server id (`github`) that nothing in the file actually uses — the real server id (`foundry`) is set up by a separate, manually-written `settings.xml` a few lines later. It's harmless today, but it's exactly the kind of small drift that accumulates in a hand-maintained workflow with no second reviewer — a live example of the problem the proposal is trying to solve, not a knock on this repo specifically.
 
@@ -62,34 +62,9 @@ Several things turned up that are direct, factual evidence for centralizing this
 
 **The honest counterweight:** almost none of these repos currently use the develop→main promotion model the three-file pattern assumes — most just tag off whatever branch a human is on. Adopting this pattern is asking these teams to adopt a branching discipline change, not just a workflow-file swap. That's a bigger, fairer ask to name up front than to have surfaced as a surprise objection later.
 
-## Proposal: fold `scan-secrets` into `workflow-actions`
+## Proposal: fold `scan-secrets` into `workflow-actions` — done
 
-This is the direct answer to "is there another workflow like `scan-secrets` worth adding." `foundry-server` already has one — `secret-scan.yml`, running gitleaks against every PR and every push to `develop`/`main`, uploading a SARIF report as a build artifact. It's currently deliberately **advisory-only** (`--exit-code 0`, so findings are visible but never fail the build) while a specific set of known, tracked findings get remediated — with an explicit intent in the file's own comments to flip it to blocking once that's done.
-
-That's a well-designed, low-risk pattern already proven in production. It doesn't touch release logic, doesn't conflict with any build topology, and applies identically to every Java and Node repo reviewed. Proposed shape for a new `scan-secrets.yml` reusable workflow:
-
-```yaml
-on:
-  workflow_call:
-    inputs:
-      blocking:
-        description: Fail the job on findings. Default true — new adopters
-          get it strict from day one; migrating repos with existing
-          findings opt into advisory mode explicitly, not by default.
-        type: boolean
-        required: false
-        default: true
-      gitleaks-version:
-        type: string
-        required: false
-        default: "8.18.4"
-      config-path:
-        type: string
-        required: false
-        default: ".gitleaks.toml"
-```
-
-Every repo in this review — every family, every language, templates included — could adopt this immediately with no architectural conflict. It's the single easiest, most universally applicable addition found in this review, and a strong opening move: "here's a real gap we found across seven production repos, here's how one shared workflow closes it everywhere at once" is a much stronger pitch than the abstract version.
+Implemented as [`scan-secrets.yml`](../.github/workflows/scan-secrets.yml). `foundry-server` was the source: gitleaks against every PR and every push to `develop`/`main`, SARIF artifact, advisory-only (`blocking: false`) while known fixture findings are remediated. New adopters get `blocking: true` by default. Every repo in this review can adopt the wrapper immediately with no architectural conflict.
 
 ## Proposal: unblock the BuildKit-secrets repos
 

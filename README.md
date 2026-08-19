@@ -2,9 +2,15 @@
 
 Reusable GitHub Actions and workflows for Java and Node (Next.js) projects.
 
+**Consuming repos:** reference this repo as `ffbarrie/workflow-actions@v1` (workflows and composite actions). Pin to `@v1` or a specific tag/SHA — do not use `@develop`. Changes to composite actions on `develop` are not exercised by reusable-workflow runs until `v1` is updated (or a new tag like `v2` is cut).
+
+GitHub Free private organizations cannot call reusable workflows from another private repo. A private org copy exists at `Foundry-Innovations-PBC/workflows-actions`, but private Foundry consumers must `uses:` **this public repo** until the org repo is public or the org is on GitHub Team.
+
 Setting up a new repo? [`examples/`](examples) has complete, ready-to-copy
 `.github/workflows/` for all four repo shapes this covers — Java/Node ×
 library/application — rather than assembling one from the snippets below.
+Each shape is five wrappers: `ci.yml`, `promote.yml`, `release.yml`,
+`secret-scan.yml`, and `branch-guard.yml`.
 
 ## Actions
 
@@ -637,6 +643,61 @@ jobs:
       sibling-path: my-library
     secrets:
       sibling-token: ${{ secrets.SIBLING_CHECKOUT_TOKEN }}
+```
+
+### [scan-secrets.yml](.github/workflows/scan-secrets.yml)
+
+Language-agnostic gitleaks scan of the working tree — not bundled into
+`build-test-*.yml` because it has a different trigger shape (PRs plus
+pushes to both `develop` and `main`) and a different failure policy.
+Default is **blocking** so new adopters get a strict scan from day one.
+Repos with known, tracked findings pass `blocking: false` and stay
+advisory until they can flip it. If `config-path` (default
+`.gitleaks.toml`) is missing, the scan still runs with gitleaks' default
+rules.
+
+```yaml
+# .github/workflows/secret-scan.yml, in the consuming repo
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+jobs:
+  scan:
+    uses: ffbarrie/workflow-actions/.github/workflows/scan-secrets.yml@v1
+    with:
+      blocking: true
+```
+
+### [branch-guard-main.yml](.github/workflows/branch-guard-main.yml)
+
+After-the-fact detector for a direct push to `main` (anything that is
+not a PR merge). **GitHub Free private organizations cannot use branch
+protection / rulesets to hard-block those pushes**, so this cannot
+prevent the commit from landing — it fails the Actions run for
+visibility and optionally posts to a chat webhook (`chat-webhook`
+secret, e.g. `GCHAT_WEBHOOK`) so someone notices. Empty webhook skips
+notification; the job still fails.
+
+Compatible with this repo's tag-only release model: `release-*.yml`
+never pushes a commit to the `main` branch ref, so a legitimate promote
+is a PR merge (allowed) and a human `git push` to `main` is what this
+catches. Not bundled into `build-test-*.yml` — that workflow never
+runs on `main`.
+
+```yaml
+# .github/workflows/branch-guard.yml, in the consuming repo
+on:
+  push:
+    branches: [main]
+
+jobs:
+  guard:
+    uses: ffbarrie/workflow-actions/.github/workflows/branch-guard-main.yml@v1
+    secrets:
+      chat-webhook: ${{ secrets.GCHAT_WEBHOOK }}
 ```
 
 ## Validating this repo itself
