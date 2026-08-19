@@ -1,0 +1,14 @@
+# Place at .github/workflows/branch-guard.yml in a consuming repo.
+# GitHub Free private orgs cannot hard-block direct pushes to main via
+# branch protection; this fails the Actions run after the fact.
+name: Branch Guard
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  guard:
+    uses: ffbarrie/workflow-actions/.github/workflows/branch-guard-main.yml@v1
+    secrets:
+      chat-webhook: ${{ secrets.GCHAT_WEBHOOK }}
