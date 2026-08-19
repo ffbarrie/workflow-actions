@@ -2,7 +2,7 @@
 
 **Status:** Draft for team discussion — not a decision, a starting point.
 **Author:** Fred Barrie
-**Repo under discussion:** [`ffbarrie/workflow-actions`](https://github.com/ffbarrie/workflow-actions), to be transferred to `Foundry-Innovations-PBC`
+**Repo under discussion:** [`ffbarrie/workflow-actions`](https://github.com/ffbarrie/workflow-actions) (public caller target). Org copy: [`Foundry-Innovations-PBC/workflows-actions`](https://github.com/Foundry-Innovations-PBC/workflows-actions) (private; not usable from GitHub Free private consumers).
 
 ## Summary
 
@@ -82,13 +82,13 @@ This is not "should we use GitHub Actions" — it's specifically: **should share
 3. **Governance of `workflow-actions` itself.** Once multiple teams depend on it, who reviews changes to it? Right now `main`/`develop` require a PR (no direct pushes) but **zero required approvals** — any PR merges without a second reviewer, including mine. That was fine as a single-person sandbox; it's worth deciding whether shared infrastructure should require at least one approval before this goes wider.
 4. **The floating `@v1` tag.** Every consumer references `@v1`, which moves forward on every change — there's no changelog and no per-repo opt-in. This session alone moved it a dozen-plus times. That's exactly what makes the Trivy story work (automatic propagation), but it's the same mechanism that would propagate a *bad* change just as automatically. Worth a real discussion: is floating-tag-with-review-discipline enough, or do we want a changelog, a slower-moving `@v1-stable` alongside a `@v1-latest`, or something else?
 
-## Public visibility — the specific thing I want input on before transfer
+## Public visibility
 
-`ffbarrie/workflow-actions` is **already public** (MIT licensed) under my personal account. Every other repo I've checked in `Foundry-Innovations-PBC` is private — the org currently has **zero public repos**. If this transfers into the org and stays public, it becomes the org's first public-facing artifact, associated with the Foundry name directly rather than a personal account.
+`ffbarrie/workflow-actions` is **public** (MIT licensed) and is the repo private Foundry consumers must `uses:` today. An org copy lives at [`Foundry-Innovations-PBC/workflows-actions`](https://github.com/Foundry-Innovations-PBC/workflows-actions) but is **private**. GitHub Free private organizations cannot call reusable workflows from another private repo, so pointing consumers at the org copy fails instantly with a workflow-file error and empty `referenced_workflows`. This public repo is the working source until the org copy is public or the org is on GitHub Team.
 
-**Why public matters practically, not just optically:** GitHub reusable workflows referenced across repos (`uses: owner/repo/.github/workflows/x.yml@v1`) need either (a) the source repo to be public, or (b) explicit per-repo access configuration in the source repo's Actions settings for every single private consumer. Keeping it private and allowlisting each repo works but doesn't scale well as an org-wide standard — every new consuming repo needs manual configuration, and it's easy to forget. Public removes that friction entirely, which is a large part of why it's public today.
+**Why public matters practically, not just optically:** GitHub reusable workflows referenced across repos (`uses: owner/repo/.github/workflows/x.yml@v1`) need either (a) the source repo to be public, or (b) GitHub Team plus explicit access configuration in the source repo's Actions settings. Public removes that friction entirely.
 
-**What's worth the team's input before transfer:**
+**What's worth the team's input if this later transfers into the org as a public repo:**
 
 - **Content audit.** No secrets have ever been committed (values are always `${{ secrets.X }}` references, never literal), but a deliberate secret-scan pass before/after transfer is warranted rather than assumed. Comments and commit history do reference real internal details — the Foundry Maven/npm/Docker registry hostname (`registry.foundry-pbc.com`), and real incident postmortems from actual releases. None of that is a secret, but it's discoverable and worth a conscious "are we fine with this being public" read-through, not a silent assumption.
 - **Staying public vs. going private-with-allowlist.** I'd lean toward staying public given the scaling argument above, but this is exactly the kind of call that shouldn't be made unilaterally for the org's first public repo.
